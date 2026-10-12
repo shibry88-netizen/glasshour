@@ -50,16 +50,28 @@
       const target = new Date(state.targetISO).getTime();
       const left = target - now;
       const p = splitMs(left);
-      const total = Math.max(1, target - (now - 1));
+      if (left <= 0) {
+        return {
+          mode,
+          big: '00',
+          unit: '天',
+          sub: '已完成',
+          caption: state.title || '目标日',
+          progress: 1,
+          done: true,
+          urgent: false,
+          secondsLeft: 0,
+        };
+      }
       return {
         mode,
         big: String(p.d),
         unit: '天',
         sub: `${pad(p.h)} 时 ${pad(p.m)} 分 ${pad(p.s)} 秒`,
         caption: state.title || '目标日',
-        progress: left <= 0 ? 1 : 0,
-        done: left <= 0,
-        urgent: left > 0 && left <= 7 * 86400 * 1000,
+        progress: 0,
+        done: false,
+        urgent: left <= 7 * 86400 * 1000,
         secondsLeft: p.total,
       };
     }
@@ -75,12 +87,13 @@
     const total = state.durationSec || 1;
     const elapsedRatio = 1 - Math.min(1, Math.max(0, p.total / total));
     const mmss = p.d > 0 ? `${p.d * 24 + p.h}:${pad(p.m)}:${pad(p.s)}` : `${pad(p.m)}:${pad(p.s)}`;
+    const statusText = state.timerRunning ? '计时中' : p.total <= 0 ? '已结束' : '已暂停';
     return {
       mode,
       big: mmss,
       unit: '',
-      sub: state.timerRunning ? '计时中' : p.total <= 0 ? '已结束' : '已暂停',
-      caption: '时长计时',
+      sub: '',
+      caption: '时长计时 · ' + statusText,
       progress: elapsedRatio,
       done: p.total <= 0 && !state.timerRunning,
       urgent: state.timerRunning && p.total <= 60,
@@ -102,16 +115,25 @@
       card.classList.toggle('is-done', !!v.done);
       card.classList.toggle('is-paused', v.mode === 'timer' && !v.running);
       card.style.setProperty('--gh-progress', (v.progress * 100).toFixed(2) + '%');
+      if (state.opacity != null) card.style.opacity = String(state.opacity);
     }
 
     const big = q('big');
-    if (big && big.textContent !== v.big) big.textContent = v.big;
+    if (big && big.textContent !== v.big) {
+      big.textContent = v.big;
+      big.classList.remove('is-tick');
+      void big.offsetWidth; // 重启动画
+      big.classList.add('is-tick');
+    }
 
     const unit = q('unit');
     if (unit) unit.textContent = v.unit;
 
     const sub = q('sub');
-    if (sub) sub.textContent = v.sub;
+    if (sub) {
+      const m = /^(\d{2}) 时 (\d{2}) 分 (\d{2}) 秒$/.exec(v.sub);
+      sub.innerHTML = m ? `${m[1]} 时 ${m[2]} 分 <b>${m[3]}</b> 秒` : v.sub;
+    }
 
     const cap = q('caption');
     if (cap) cap.textContent = v.caption;
@@ -127,6 +149,8 @@
       toggle.classList.toggle('is-running', running);
       toggle.setAttribute('aria-label', running ? '暂停' : '开始');
       toggle.dataset.icon = running ? 'pause' : 'play';
+      const label = running ? '暂停' : '开始';
+      if (toggle.textContent !== label) toggle.textContent = label;
     }
 
     qa('timer-only').forEach((n) => n.classList.toggle('is-hidden', state.mode !== 'timer'));

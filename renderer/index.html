@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'" />
+  <title>GlassHour</title>
+  <link rel="stylesheet" href="widget.css" />
+</head>
+<body>
+  <!-- 组件窗口 460x320；卡片 420x280，四周各留 20px 给投影 -->
+  <div class="gh-stage" data-gh="drag">
+    <div class="gh-card" data-gh="card">
+      <div class="gh-card__tint" aria-hidden="true"></div>
+
+      <!-- 模式切换胶囊：X28 Y28 W96 H28 -->
+      <div class="gh-seg">
+        <span class="gh-seg__thumb" aria-hidden="true"></span>
+        <button class="gh-seg__btn" data-gh="mode-btn" data-mode="date" type="button">日期</button>
+        <button class="gh-seg__btn" data-gh="mode-btn" data-mode="timer" type="button">计时</button>
+      </div>
+
+      <!-- 齿轮：X364 Y28 W28 H28 -->
+      <button class="gh-gear" data-gh="settings" type="button" aria-label="设置">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3.1" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+
+      <!-- 事件标签：X20 Y84 W380 H18 -->
+      <div class="gh-label" data-gh="caption">元旦</div>
+
+      <!-- 主数字块：X20 Y100 W380 H106 -->
+      <div class="gh-bigline">
+        <span class="gh-big" data-gh="big">78</span><span class="gh-unit" data-gh="unit">天</span>
+      </div>
+
+      <!-- 副行：X20 Y214 W380 H22 -->
+      <div class="gh-sub" data-gh="sub">06 时 12 分 30 秒</div>
+
+      <!-- 计时器模式的操作：开始/暂停 X150 Y208 W120 H38；重置 X312 Y212 W68 H30 -->
+      <div class="gh-actions" data-gh="timer-only">
+        <button class="gh-btn gh-btn--primary" data-gh="timer-toggle" data-icon="play" type="button">开始</button>
+        <button class="gh-btn gh-btn--ghost" data-gh="timer-reset" type="button">重置</button>
+      </div>
+
+      <!-- 高光扫过 -->
+      <div class="gh-sheen" aria-hidden="true"></div>
+      <!-- 极细噪点 -->
+      <div class="gh-noise" aria-hidden="true"></div>
+    </div>
+  </div>
+  <script src="widget.js"></script>
+</body>
+</html>
