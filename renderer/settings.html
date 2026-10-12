@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>GlassHour · 设置</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --panel: rgba(255, 255, 255, 0.045);
+      --line: rgba(255, 255, 255, 0.09);
+      --txt: #ece7dd;
+      --dim: #9b9489;
+      --gold: #d8b678;
+      --gold-2: #f3dcae;
+      --gold-deep: #8a6a2f;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background:
+        radial-gradient(1100px 520px at 15% -8%, rgba(216, 182, 120, 0.10), transparent 60%),
+        radial-gradient(900px 460px at 110% 108%, rgba(138, 106, 47, 0.10), transparent 60%),
+        var(--bg);
+      color: var(--txt);
+      font: 13.5px/1.6 "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      padding: 22px 22px 90px;
+      user-select: none;
+    }
+    h1 { font-size: 17px; margin: 0 0 4px; letter-spacing: .04em; }
+    h1 .dot { color: var(--gold); }
+    .sub { color: var(--dim); font-size: 12px; margin-bottom: 18px; }
+
+    .group {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 14px 16px 16px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(14px);
+    }
+    .group > .gtitle {
+      font-size: 11.5px; letter-spacing: .16em; color: var(--gold);
+      text-transform: uppercase; margin-bottom: 12px;
+    }
+    .row { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
+    .row > label { flex: 0 0 96px; color: var(--dim); }
+    .row > .grow { flex: 1; }
+
+    input[type="text"], input[type="datetime-local"], input[type="number"], select {
+      width: 100%; background: rgba(0,0,0,.42); color: var(--txt);
+      border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px;
+      font: inherit; outline: none;
+    }
+    input:focus, select:focus { border-color: rgba(216,182,120,.55); box-shadow: 0 0 0 3px rgba(216,182,120,.10); }
+    input[type="range"] { width: 100%; accent-color: var(--gold); }
+    input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--gold); }
+
+    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .seg button {
+      background: transparent; color: var(--dim); border: 0; padding: 8px 18px;
+      font: inherit; cursor: pointer;
+    }
+    .seg button.is-active { background: linear-gradient(180deg, rgba(216,182,120,.22), rgba(216,182,120,.10)); color: var(--gold-2); }
+
+    .hint { color: var(--dim); font-size: 11.5px; margin-top: 6px; }
+    .footer {
+      position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 22px;
+      display: flex; gap: 10px; align-items: center;
+      background: linear-gradient(180deg, transparent, rgba(10,10,12,.92) 42%);
+    }
+    .btn {
+      border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--txt);
+      padding: 9px 16px; border-radius: 10px; font: inherit; cursor: pointer;
+    }
+    .btn:hover { background: rgba(255,255,255,.09); }
+    .btn.primary {
+      border-color: rgba(216,182,120,.5); color: #1a1206;
+      background: linear-gradient(180deg, var(--gold-2), var(--gold));
+      font-weight: 600;
+    }
+    .btn.primary:hover { filter: brightness(1.06); }
+    .status { margin-left: auto; color: var(--dim); font-size: 12px; }
+    .kv { color: var(--dim); font-size: 12px; }
+    .kv b { color: var(--txt); font-weight: 500; }
+    code { background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 5px; font-size: 11.5px; }
+  </style>
+</head>
+<body>
+  <h1>GlassHour <span class="dot">·</span> 琉璃沙漏</h1>
+  <div class="sub">液态玻璃桌面倒计时组件 · Windows 10</div>
+
+  <div class="group">
+    <div class="gtitle">模式</div>
+    <div class="row">
+      <label>当前模式</label>
+      <div class="grow">
+        <div class="seg" id="modeSeg">
+          <button data-mode="date">目标日期倒计时</button>
+          <button data-mode="timer">时长计时器</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="gtitle">目标日期倒计时</div>
+    <div class="row">
+      <label>事件名称</label>
+      <div class="grow"><input type="text" id="title" placeholder="例如：元旦 / 考试 / 纪念日" /></div>
+    </div>
+    <div class="row">
+      <label>目标时间</label>
+      <div class="grow"><input type="datetime-local" id="target" step="1" /></div>
+    </div>
+    <div class="hint">主数字显示剩余<b>天数</b>，副行显示时 / 分 / 秒。剩余不足 7 天会进入「紧迫」态。</div>
+  </div>
+
+  <div class="group">
+    <div class="gtitle">时长计时器</div>
+    <div class="row">
+      <label>时长</label>
+      <div class="grow">
+        <div style="display:flex;gap:10px;align-items:center">
+          <input type="number" id="durMin" min="0" max="1440" step="1" style="width:110px" /> <span class="kv">分</span>
+          <input type="number" id="durSec" min="0" max="59" step="1" style="width:90px" /> <span class="kv">秒</span>
+          <button class="btn" id="applyDuration">应用</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint">常用预设：<code>25:00</code> 番茄钟 · <code>05:00</code> 泡面 · <code>45:00</code> 一节课</div>
+  </div>
+
+  <div class="group">
+    <div class="gtitle">外观与行为</div>
+    <div class="row">
+      <label>组件透明度</label>
+      <div class="grow"><input type="range" id="opacity" min="35" max="100" step="1" /></div>
+      <span class="kv" id="opacityVal">100%</span>
+    </div>
+    <div class="row">
+      <label>桌面层策略</label>
+      <div class="grow">
+        <select id="layer">
+          <option value="auto">自动（推荐：先试壁纸层，失败自动回退）</option>
+          <option value="workerw">强制钉在壁纸层（WorkerW）</option>
+          <option value="bottom">兼容模式（不可激活的底层窗口）</option>
+          <option value="normal">普通窗口</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint">若墙纸层钉不上、或组件被桌面图标挡住，把这里改成「兼容模式」。</div>
+    <div class="row">
+      <label>开机自启</label>
+      <div class="grow"><input type="checkbox" id="autostart" /> <span class="kv">随 Windows 启动（写入注册表 Run 项）</span></div>
+    </div>
+    <div class="row">
+      <label>窗口位置</label>
+      <div class="grow"><button class="btn" id="resetPos">重置到右下角</button></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="gtitle">关于</div>
+    <div class="row"><label>版本</label><div class="grow kv" id="ver">—</div></div>
+    <div class="row"><label>桌面层</label><div class="grow kv" id="layerInfo">—</div></div>
+    <div class="row"><label>配置文件</label><div class="grow kv"><button class="btn" id="openCfg">打开配置目录</button></div></div>
+  </div>
+
+  <div class="footer">
+    <button class="btn primary" id="save">保存</button>
+    <button class="btn" id="hideWidget">隐藏组件</button>
+    <span class="status" id="status"></span>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>
