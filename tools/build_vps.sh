@@ -24,6 +24,17 @@ VER="$(node -p "require('./package.json').version")"
 export ELECTRON_MIRROR="${ELECTRON_MIRROR:-https://npmmirror.com/mirrors/electron/}"
 export ELECTRON_BUILDER_BINARIES_MIRROR="${ELECTRON_BUILDER_BINARIES_MIRROR:-https://npmmirror.com/mirrors/electron-builder-binaries/}"
 
+# ---- 代码签名（可选）----
+# electron-builder 原生认这两个环境变量，不需要改配置：
+#   CSC_LINK          .pfx/.p12 文件路径，或它的 base64 字符串
+#   CSC_KEY_PASSWORD  证书密码
+# 详见 docs/代码签名.md
+if [ -n "${CSC_LINK:-}" ]; then
+  echo "== 检测到 CSC_LINK，产物将用证书签名 =="
+else
+  echo "== 未提供 CSC_LINK，产物为未签名（用户首次运行会被 SmartScreen 拦，点『仍要运行』）=="
+fi
+
 echo "== 安装依赖 =="
 npm install --no-audit --no-fund
 
