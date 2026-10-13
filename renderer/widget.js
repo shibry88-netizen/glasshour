@@ -2,7 +2,8 @@
 /**
  * GlassHour · 组件渲染逻辑
  * 与视觉解耦：所有可视元素通过 [data-gh="名字"] 挂钩，样式由 widget.css 决定。
- * 支持两种模式：date（目标日期倒计时）/ timer（时长计时器）
+ * 两种模式：date（目标日期倒计时）/ timer（时长计时器）
+ * v1.1：支持多条倒计时条目（卡片顶栏切换）+ 每条自定义备注
  */
 (function () {
   const q = (name) => document.querySelector(`[data-gh="${name}"]`);
@@ -15,6 +16,8 @@
         getState: async () => Object.assign({ now: Date.now() }, MOCK),
         setState: async () => MOCK,
         setMode: async () => MOCK,
+        stepEntry: async () => MOCK,
+        setActiveEntry: async () => MOCK,
         onState: () => () => {},
         openSettings: () => {},
         hide: () => {},
@@ -46,17 +49,34 @@
     const now = Date.now();
     const mode = state.mode;
 
+    const entries = Array.isArray(state.entries) && state.entries.length ? state.entries : null;
+    let idx = entries ? entries.findIndex((e) => e.id === state.activeId) : 0;
+    if (idx < 0) idx = 0;
+    const total = entries ? entries.length : 1;
+    const nav = {
+      show: total > 1,
+      cur: idx + 1,
+      total,
+      canPrev: idx > 0,
+      canNext: idx < total - 1,
+    };
+
     if (mode === 'date') {
       const target = new Date(state.targetISO).getTime();
       const left = target - now;
       const p = splitMs(left);
+      const title = state.title || '目标日';
+      const note = state.note || '';
+
       if (left <= 0) {
         return {
           mode,
           big: '00',
           unit: '天',
           sub: '已完成',
-          caption: state.title || '目标日',
+          caption: title,
+          note,
+          nav,
           progress: 1,
           done: true,
           urgent: false,
@@ -68,7 +88,9 @@
         big: String(p.d),
         unit: '天',
         sub: `${pad(p.h)} 时 ${pad(p.m)} 分 ${pad(p.s)} 秒`,
-        caption: state.title || '目标日',
+        caption: title,
+        note,
+        nav,
         progress: 0,
         done: false,
         urgent: left <= 7 * 86400 * 1000,
@@ -76,7 +98,7 @@
       };
     }
 
-    // timer
+    // timer：规范里 B 模式不显示副行与备注
     let leftMs;
     if (state.timerRunning) {
       leftMs = (state.timerEndsAt || 0) - now;
@@ -84,8 +106,8 @@
       leftMs = (state.timerRemaining || state.durationSec || 0) * 1000;
     }
     const p = splitMs(leftMs);
-    const total = state.durationSec || 1;
-    const elapsedRatio = 1 - Math.min(1, Math.max(0, p.total / total));
+    const totalSec = state.durationSec || 1;
+    const elapsedRatio = 1 - Math.min(1, Math.max(0, p.total / totalSec));
     const mmss = p.d > 0 ? `${p.d * 24 + p.h}:${pad(p.m)}:${pad(p.s)}` : `${pad(p.m)}:${pad(p.s)}`;
     const statusText = state.timerRunning ? '计时中' : p.total <= 0 ? '已结束' : '已暂停';
     return {
@@ -93,7 +115,9 @@
       big: mmss,
       unit: '',
       sub: '',
+      note: '',
       caption: '时长计时 · ' + statusText,
+      nav,
       progress: elapsedRatio,
       done: p.total <= 0 && !state.timerRunning,
       urgent: state.timerRunning && p.total <= 60,
@@ -138,6 +162,27 @@
     const cap = q('caption');
     if (cap) cap.textContent = v.caption;
 
+    // 备注：空则不渲染（display:none），其它元素零位移
+    const note = q('note');
+    if (note) {
+      const txt = v.note || '';
+      if (note.textContent !== txt) note.textContent = txt;
+      note.title = txt;
+      note.classList.toggle('is-hidden', !txt);
+    }
+
+    // 多条目切换控件：只有 1 条时完全不渲染
+    const nav = q('entry-nav');
+    if (nav) nav.classList.toggle('is-hidden', !v.nav.show);
+    const cur = q('entry-cur');
+    if (cur) cur.textContent = String(v.nav.cur);
+    const tot = q('entry-total');
+    if (tot) tot.textContent = String(v.nav.total);
+    const prev = q('entry-prev');
+    if (prev) prev.disabled = !v.nav.canPrev;
+    const next = q('entry-next');
+    if (next) next.disabled = !v.nav.canNext;
+
     qa('mode-btn').forEach((b) => {
       b.classList.toggle('is-active', b.dataset.mode === state.mode);
       b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode));
@@ -156,7 +201,25 @@
     qa('timer-only').forEach((n) => n.classList.toggle('is-hidden', state.mode !== 'timer'));
     qa('date-only').forEach((n) => n.classList.toggle('is-hidden', state.mode !== 'date'));
 
-    document.title = v.mode === 'date' ? `还有 ${v.big} 天 · GlassHour` : `${v.big} · GlassHour`;
+    document.title =
+      v.mode === 'date' ? `还有 ${v.big} 天 · ${v.caption}` : `${v.big} · GlassHour`;
+  }
+
+  /** 切换条目时，只让「内容类」元素做 120ms crossfade，控件不动 */
+  function flashSwap() {
+    ['caption', 'big', 'sub', 'note'].forEach((name) => {
+      const el = q(name);
+      if (!el) return;
+      el.classList.remove('gh-swap');
+      void el.offsetWidth;
+      el.classList.add('gh-swap');
+    });
+    setTimeout(() => {
+      ['caption', 'big', 'sub', 'note'].forEach((name) => {
+        const el = q(name);
+        if (el) el.classList.remove('gh-swap');
+      });
+    }, 180);
   }
 
   function startTicker() {
@@ -179,11 +242,22 @@
       toggle.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (!state.timerRunning) {
-          const left = (state.timerRemaining || state.durationSec || 0) > 0 ? state.timerRemaining || state.durationSec : state.durationSec;
-          state = await bridge.setState({ timerRunning: true, timerEndsAt: Date.now() + left * 1000, timerRemaining: left });
+          const left =
+            (state.timerRemaining || state.durationSec || 0) > 0
+              ? state.timerRemaining || state.durationSec
+              : state.durationSec;
+          state = await bridge.setState({
+            timerRunning: true,
+            timerEndsAt: Date.now() + left * 1000,
+            timerRemaining: left,
+          });
         } else {
           const left = Math.max(0, Math.round((state.timerEndsAt - Date.now()) / 1000));
-          state = await bridge.setState({ timerRunning: false, timerRemaining: left, timerEndsAt: 0 });
+          state = await bridge.setState({
+            timerRunning: false,
+            timerRemaining: left,
+            timerEndsAt: 0,
+          });
         }
         render();
       });
@@ -192,22 +266,54 @@
     if (reset)
       reset.addEventListener('click', async (e) => {
         e.stopPropagation();
-        state = await bridge.setState({ timerRunning: false, timerEndsAt: 0, timerRemaining: state.durationSec });
+        state = await bridge.setState({
+          timerRunning: false,
+          timerEndsAt: 0,
+          timerRemaining: state.durationSec,
+        });
+        render();
+      });
+
+    const prev = q('entry-prev');
+    if (prev)
+      prev.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        state = await bridge.stepEntry(-1);
+        flashSwap();
+        render();
+      });
+
+    const next = q('entry-next');
+    if (next)
+      next.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        state = await bridge.stepEntry(1);
+        flashSwap();
         render();
       });
 
     const gear = q('settings');
-    if (gear) gear.addEventListener('click', (e) => { e.stopPropagation(); bridge.openSettings(); });
+    if (gear)
+      gear.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bridge.openSettings();
+      });
 
     const close = q('close');
-    if (close) close.addEventListener('click', (e) => { e.stopPropagation(); bridge.hide(); });
+    if (close)
+      close.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bridge.hide();
+      });
 
     // 拖动：整卡可拖，交互控件除外
     const drag = q('drag') || q('card');
     if (drag) {
+      const NO_DRAG =
+        '[data-gh="mode-btn"],[data-gh="timer-toggle"],[data-gh="timer-reset"],[data-gh="settings"],[data-gh="close"],[data-gh="entry-prev"],[data-gh="entry-next"]';
       drag.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
-        if (e.target.closest('[data-gh="mode-btn"],[data-gh="timer-toggle"],[data-gh="timer-reset"],[data-gh="settings"],[data-gh="close"]')) return;
+        if (e.target.closest(NO_DRAG)) return;
         bridge.dragStart();
         const move = () => bridge.dragMove();
         const up = () => {
@@ -230,7 +336,6 @@
         render();
       });
     }
-    // 截图模式：把状态写进 location.hash 便于脚本断言
     if (MOCK) document.documentElement.dataset.mock = '1';
     bind();
     render();

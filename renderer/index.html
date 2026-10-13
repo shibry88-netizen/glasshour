@@ -28,6 +28,23 @@
         </svg>
       </button>
 
+      <!-- 多条目切换控件：X196 Y28 W96 H28（只有 ≥2 条时渲染） -->
+      <div class="gh-entrynav is-hidden" data-gh="entry-nav">
+        <button class="gh-entrynav__btn" data-gh="entry-prev" type="button" aria-label="上一个倒计时">
+          <svg viewBox="0 0 6 10" width="6" height="10" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 1 1 5l4 4" />
+          </svg>
+        </button>
+        <span class="gh-entrynav__count"><b data-gh="entry-cur">1</b><i>/</i><em data-gh="entry-total">1</em></span>
+        <button class="gh-entrynav__btn" data-gh="entry-next" type="button" aria-label="下一个倒计时">
+          <svg viewBox="0 0 6 10" width="6" height="10" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 1l4 4-4 4" />
+          </svg>
+        </button>
+      </div>
+
       <!-- 事件标签：X20 Y84 W380 H18 -->
       <div class="gh-label" data-gh="caption">元旦</div>
 
@@ -38,6 +55,9 @@
 
       <!-- 副行：X20 Y214 W380 H22 -->
       <div class="gh-sub" data-gh="sub">06 时 12 分 30 秒</div>
+
+      <!-- 备注行：X20 Y240 W380 H20（空则不渲染） -->
+      <div class="gh-note is-hidden" data-gh="note"></div>
 
       <!-- 计时器模式的操作：开始/暂停 X150 Y208 W120 H38；重置 X312 Y212 W68 H30 -->
       <div class="gh-actions" data-gh="timer-only">

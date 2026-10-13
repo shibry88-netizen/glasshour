@@ -33,6 +33,8 @@ const store = new Store('config', {
   openAtLogin: false,
   visible: true,
   opacity: 1,
+  entries: [],
+  activeId: '',
   timerRunning: false,
   timerEndsAt: 0,
   timerRemaining: 1500,
@@ -53,6 +55,130 @@ function log(...args) {
   } catch (_) {
     /* ignore */
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* 倒计时条目（v1.1：多条 + 每条自定义截止时间与备注）                  */
+/* ------------------------------------------------------------------ */
+// 统一用「本地朴素」时间串 YYYY-MM-DDTHH:mm:ss —— 和设置页的 date/time 输入一一对应，
+// 且 new Date(str) 会按本地时区解析，不会出现时区偏移
+const in30Days = () => {
+  const d = new Date(Date.now() + 30 * 86400000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
+function newEntry(patch) {
+  return Object.assign(
+    {
+      id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: '新的倒计时',
+      targetISO: in30Days(),
+      note: '',
+    },
+    patch || {}
+  );
+}
+
+/** 规范化条目列表；首次运行会把旧的单条 title/targetISO 平滑迁进来 */
+function normalizeEntries() {
+  let list = store.get('entries');
+  if (!Array.isArray(list) || list.length === 0) {
+    list = [
+      newEntry({
+        title: store.get('title') || '目标日',
+        targetISO: store.get('targetISO') || in30Days(),
+        note: '',
+      }),
+    ];
+  }
+  list = list.map((e, i) =>
+    Object.assign(newEntry(), e || {}, {
+      id: e && e.id ? e.id : 'e' + i,
+      title: e && typeof e.title === 'string' && e.title.trim() ? e.title : '未命名',
+      targetISO: (e && e.targetISO) || in30Days(),
+      note: e && typeof e.note === 'string' ? e.note : '',
+    })
+  );
+  store.set('entries', list);
+  if (!list.some((e) => e.id === store.get('activeId'))) store.set('activeId', list[0].id);
+  return list;
+}
+
+function activeEntry() {
+  const list = store.get('entries') || [];
+  return list.find((e) => e.id === store.get('activeId')) || list[0] || null;
+}
+
+function updateEntry(id, patch, doBroadcast) {
+  const list = normalizeEntries();
+  const i = list.findIndex((e) => e.id === id);
+  if (i < 0) return null;
+  for (const k of ['title', 'targetISO', 'note']) {
+    if (patch && k in patch) list[i][k] = patch[k];
+  }
+  store.set('entries', list);
+  if (doBroadcast !== false) {
+    refreshTrayMenu();
+    broadcast();
+  }
+  return list[i];
+}
+
+function addEntry(patch) {
+  const list = normalizeEntries();
+  const e = newEntry(patch);
+  list.push(e);
+  store.set('entries', list);
+  store.set('activeId', e.id);
+  refreshTrayMenu();
+  broadcast();
+  return e;
+}
+
+function removeEntry(id) {
+  const list = normalizeEntries();
+  if (list.length <= 1) return { ok: false, reason: 'last-entry' };
+  const i = list.findIndex((e) => e.id === id);
+  if (i < 0) return { ok: false, reason: 'not-found' };
+  list.splice(i, 1);
+  store.set('entries', list);
+  if (store.get('activeId') === id) store.set('activeId', list[Math.min(i, list.length - 1)].id);
+  refreshTrayMenu();
+  broadcast();
+  return { ok: true };
+}
+
+function setActiveEntry(id) {
+  const list = normalizeEntries();
+  if (!list.some((e) => e.id === id)) return { ok: false };
+  store.set('activeId', id);
+  refreshTrayMenu();
+  broadcast();
+  return { ok: true };
+}
+
+function stepActiveEntry(dir) {
+  const list = normalizeEntries();
+  const i = list.findIndex((e) => e.id === store.get('activeId'));
+  const n = Math.min(Math.max(i + (dir > 0 ? 1 : -1), 0), list.length - 1);
+  if (n !== i) setActiveEntry(list[n].id);
+  return list[n];
+}
+
+/** 托盘里的「切换倒计时」子菜单（只有 1 条时返回 null，不出现） */
+function entryMenu() {
+  const list = store.get('entries') || [];
+  if (list.length <= 1) return null;
+  return {
+    label: '切换倒计时',
+    submenu: list.map((e) => ({
+      label: `${e.title}（${String(e.targetISO).slice(0, 10)}）`,
+      type: 'radio',
+      checked: e.id === store.get('activeId'),
+      click: () => setActiveEntry(e.id),
+    })),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -293,8 +419,7 @@ function resetPosition() {
 function refreshTrayMenu() {
   if (!tray) return;
   const mode = store.get('mode');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
+  const items = [
       {
         label: store.get('visible') ? '隐藏组件' : '显示组件',
         click: () => (store.get('visible') ? hideWidget() : showWidget()),
@@ -336,8 +461,10 @@ function refreshTrayMenu() {
           }),
       },
       { label: '退出', click: () => { quitFlag = true; app.quit(); } },
-    ])
-  );
+  ];
+  const em = entryMenu();
+  if (em) items.splice(2, 0, em);
+  tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
 function createTray() {
@@ -356,10 +483,15 @@ function createTray() {
 /* 状态 / IPC                                                          */
 /* ------------------------------------------------------------------ */
 function publicState() {
+  const list = store.get('entries') || [];
+  const act = activeEntry();
   return {
     mode: store.get('mode'),
-    targetISO: store.get('targetISO'),
-    title: store.get('title'),
+    entries: list.map((e) => ({ id: e.id, title: e.title, targetISO: e.targetISO, note: e.note })),
+    activeId: store.get('activeId'),
+    targetISO: act ? act.targetISO : store.get('targetISO'),
+    title: act ? act.title : store.get('title'),
+    note: act ? act.note : '',
     durationSec: store.get('durationSec'),
     opacity: store.get('opacity'),
     visible: store.get('visible'),
@@ -383,11 +515,16 @@ function broadcast() {
 function registerIpc() {
   ipcMain.handle('state:get', () => publicState());
   ipcMain.handle('state:set', (_e, patch) => {
-    const allowed = ['mode', 'targetISO', 'title', 'durationSec', 'opacity', 'desktopLayer',
+    const allowed = ['mode', 'durationSec', 'opacity', 'desktopLayer',
       'timerRunning', 'timerEndsAt', 'timerRemaining'];
     const clean = {};
     for (const k of Object.keys(patch || {})) if (allowed.includes(k)) clean[k] = patch[k];
+    const entryPatch = {};
+    for (const k of ['title', 'targetISO', 'note']) {
+      if (patch && k in patch) entryPatch[k] = patch[k];
+    }
     store.patch(clean);
+    if (Object.keys(entryPatch).length) updateEntry(store.get('activeId'), entryPatch, false);
     if ('desktopLayer' in clean) applyDesktopLayer();
     refreshTrayMenu();
     broadcast();
@@ -408,6 +545,27 @@ function registerIpc() {
     app.quit();
   });
   ipcMain.handle('shell:open-path', (_e, p) => shell.openPath(p));
+  ipcMain.handle('entry:add', (_e, patch) => {
+    addEntry(patch || {});
+    return publicState();
+  });
+  ipcMain.handle('entry:update', (_e, arg) => {
+    const a = arg || {};
+    updateEntry(a.id, a.patch || {});
+    return publicState();
+  });
+  ipcMain.handle('entry:remove', (_e, id) => {
+    const r = removeEntry(id);
+    return Object.assign({ state: publicState() }, r);
+  });
+  ipcMain.handle('entry:set-active', (_e, id) => {
+    setActiveEntry(id);
+    return publicState();
+  });
+  ipcMain.handle('entry:step', (_e, dir) => {
+    stepActiveEntry(dir);
+    return publicState();
+  });
   ipcMain.handle('login-item:set', (_e, on) => {
     setAutoStart(!!on);
     return { openAtLogin: currentAutoStart(), userData: app.getPath('userData') };
@@ -438,6 +596,7 @@ function registerIpc() {
 /* 生命周期                                                            */
 /* ------------------------------------------------------------------ */
 app.whenReady().then(() => {
+  normalizeEntries();
   registerIpc();
   createWidget();
   createTray();

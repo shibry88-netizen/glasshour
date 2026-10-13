@@ -8,23 +8,27 @@
     :root {
       --bg: #0a0a0c;
       --panel: rgba(255, 255, 255, 0.045);
+      --panel2: rgba(255, 255, 255, 0.03);
       --line: rgba(255, 255, 255, 0.09);
+      --line2: rgba(236, 232, 224, 0.14);
       --txt: #ece7dd;
       --dim: #9b9489;
-      --gold: #d8b678;
-      --gold-2: #f3dcae;
-      --gold-deep: #8a6a2f;
+      --weak: rgba(236, 232, 224, 0.34);
+      --gold: #c9a45b;
+      --gold-2: #ebd9a8;
+      --gold-deep: #8c6b2e;
+      --ink: #0b0c0e;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; }
     body {
       background:
-        radial-gradient(1100px 520px at 15% -8%, rgba(216, 182, 120, 0.10), transparent 60%),
-        radial-gradient(900px 460px at 110% 108%, rgba(138, 106, 47, 0.10), transparent 60%),
+        radial-gradient(1100px 520px at 15% -8%, rgba(201, 164, 91, 0.10), transparent 60%),
+        radial-gradient(900px 460px at 110% 108%, rgba(140, 107, 46, 0.10), transparent 60%),
         var(--bg);
       color: var(--txt);
-      font: 13.5px/1.6 "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
-      padding: 22px 22px 90px;
+      font: 13.5px/1.6 "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+      padding: 22px 22px 96px;
       user-select: none;
     }
     h1 { font-size: 17px; margin: 0 0 4px; letter-spacing: .04em; }
@@ -34,7 +38,7 @@
     .group {
       border: 1px solid var(--line);
       background: var(--panel);
-      border-radius: 14px;
+      border-radius: 16px;
       padding: 14px 16px 16px;
       margin-bottom: 14px;
       backdrop-filter: blur(14px);
@@ -45,50 +49,168 @@
     }
     .row { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
     .row > label { flex: 0 0 96px; color: var(--dim); }
-    .row > .grow { flex: 1; }
+    .row > .grow { flex: 1; min-width: 0; }
 
-    input[type="text"], input[type="datetime-local"], input[type="number"], select {
-      width: 100%; background: rgba(0,0,0,.42); color: var(--txt);
-      border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px;
-      font: inherit; outline: none;
+    input[type="text"], input[type="date"], input[type="time"], input[type="number"], select, textarea {
+      width: 100%; background: rgba(0, 0, 0, .42); color: var(--txt);
+      border: 1px solid var(--line2); border-radius: 10px; padding: 9px 11px;
+      font: inherit; outline: none; resize: none;
     }
-    input:focus, select:focus { border-color: rgba(216,182,120,.55); box-shadow: 0 0 0 3px rgba(216,182,120,.10); }
+    textarea { height: 72px; line-height: 1.5; }
+    input:focus, select:focus, textarea:focus {
+      border-color: rgba(201, 164, 91, .7);
+      box-shadow: 0 0 0 3px rgba(201, 164, 91, .10);
+    }
     input[type="range"] { width: 100%; accent-color: var(--gold); }
     input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--gold); }
+    ::placeholder { color: var(--weak); }
 
-    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-    .seg button {
-      background: transparent; color: var(--dim); border: 0; padding: 8px 18px;
-      font: inherit; cursor: pointer;
+    .seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; }
+    .seg button { background: transparent; color: var(--dim); border: 0; padding: 9px 20px; font: inherit; cursor: pointer; }
+    .seg button.is-active {
+      background: linear-gradient(180deg, rgba(201, 164, 91, .24), rgba(201, 164, 91, .10));
+      color: var(--gold-2);
     }
-    .seg button.is-active { background: linear-gradient(180deg, rgba(216,182,120,.22), rgba(216,182,120,.10)); color: var(--gold-2); }
 
-    .hint { color: var(--dim); font-size: 11.5px; margin-top: 6px; }
+    /* ---------- 条目列表 ---------- */
+    .entries { display: flex; flex-direction: column; gap: 8px; }
+    .eitem {
+      position: relative; display: flex; align-items: center; gap: 10px;
+      height: 64px; padding: 12px 12px 12px 16px; border-radius: 12px;
+      background: var(--panel2); border: 1px solid var(--line);
+      cursor: pointer; transition: background .16s ease, border-color .16s ease;
+    }
+    .eitem:hover { background: rgba(255, 255, 255, .06); border-color: var(--line2); }
+    .eitem.is-active { border-color: rgba(201, 164, 91, .35); }
+    .eitem.is-active::before {
+      content: ""; position: absolute; left: 4px; top: 20px; width: 2px; height: 24px;
+      border-radius: 1px; background: var(--gold);
+    }
+    .eitem__info { flex: 1; min-width: 0; }
+    .eitem__name {
+      font-size: 15px; font-weight: 500; color: var(--txt);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .eitem__meta {
+      font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .eitem__meta b { color: var(--gold-2); font-weight: 500; }
+    .eitem__tag { font-size: 11px; color: var(--gold); margin-left: 6px; }
+    .iconbtn {
+      flex: 0 0 28px; width: 28px; height: 28px; border-radius: 14px; border: 0;
+      display: grid; place-items: center; background: transparent; color: var(--dim); cursor: pointer;
+    }
+    .iconbtn:hover { background: rgba(255, 255, 255, .08); color: var(--txt); }
+
+    .btn-add {
+      width: 100%; height: 44px; margin-top: 12px; border-radius: 22px; border: 0;
+      font: 600 15px/1 inherit; color: #201604; cursor: pointer;
+      background: linear-gradient(160deg, var(--gold-2), var(--gold-deep));
+      box-shadow: inset 0 1px 0 rgba(255, 246, 222, .45), 0 6px 18px rgba(201, 164, 91, .28);
+    }
+    .btn-add:hover { filter: brightness(1.06); }
+
+    /* ---------- 编辑表单 ---------- */
+    .form { margin-top: 10px; padding: 16px; border-radius: 12px; background: rgba(0, 0, 0, .3); border: 1px solid var(--line2); }
+    .form.is-hidden { display: none; }
+    .field { margin-bottom: 12px; }
+    .field:last-of-type { margin-bottom: 0; }
+    .field > .flabel { font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+    .withcount { display: flex; align-items: center; gap: 8px; }
+    .withcount > *:first-child { flex: 1; }
+    .count { flex: 0 0 auto; font-size: 12px; color: var(--weak); font-variant-numeric: tabular-nums; }
+    .count.is-warn { color: rgba(236, 232, 224, .55); }
+    .dt { display: flex; gap: 8px; }
+    .dt > input[type="date"] { flex: 2; }
+    .dt > input[type="time"] { flex: 1; }
+    .hint { font-size: 12px; color: var(--weak); margin-top: 6px; }
+    .formbtns { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 14px; }
+
+    .btn { border: 1px solid var(--line2); background: rgba(255, 255, 255, .05); color: var(--txt);
+      padding: 9px 16px; border-radius: 19px; font: inherit; cursor: pointer; }
+    .btn:hover { background: rgba(255, 255, 255, .09); }
+    .btn.primary {
+      border-color: rgba(201, 164, 91, .5); color: #1a1206; min-width: 96px; height: 38px;
+      background: linear-gradient(180deg, var(--gold-2), var(--gold)); font-weight: 600;
+    }
+    .btn.primary:hover { filter: brightness(1.06); }
+    .btn.danger { border: 0; background: transparent; color: var(--dim); padding: 8px 10px; border-radius: 8px; }
+    .btn.danger:hover { color: var(--txt); background: rgba(255, 255, 255, .08); }
+
+    /* ---------- 底部 / 模态 ---------- */
     .footer {
       position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 22px;
       display: flex; gap: 10px; align-items: center;
-      background: linear-gradient(180deg, transparent, rgba(10,10,12,.92) 42%);
+      background: linear-gradient(180deg, transparent, rgba(10, 10, 12, .94) 42%);
     }
-    .btn {
-      border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--txt);
-      padding: 9px 16px; border-radius: 10px; font: inherit; cursor: pointer;
-    }
-    .btn:hover { background: rgba(255,255,255,.09); }
-    .btn.primary {
-      border-color: rgba(216,182,120,.5); color: #1a1206;
-      background: linear-gradient(180deg, var(--gold-2), var(--gold));
-      font-weight: 600;
-    }
-    .btn.primary:hover { filter: brightness(1.06); }
     .status { margin-left: auto; color: var(--dim); font-size: 12px; }
     .kv { color: var(--dim); font-size: 12px; }
     .kv b { color: var(--txt); font-weight: 500; }
-    code { background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 5px; font-size: 11.5px; }
+    code { background: rgba(255, 255, 255, .06); padding: 1px 6px; border-radius: 5px; font-size: 11.5px; }
+
+    .modal {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      background: rgba(11, 12, 14, .6); backdrop-filter: blur(3px); z-index: 50;
+    }
+    .modal.is-hidden { display: none; }
+    .modal__box {
+      width: 320px; padding: 24px; border-radius: 16px;
+      background: rgba(20, 22, 26, .92); border: 1px solid var(--line2);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+    }
+    .modal__title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+    .modal__body { font-size: 12px; color: var(--dim); margin-bottom: 20px; line-height: 1.7; }
+    .modal__body b { color: var(--txt); font-weight: 500; }
+    .modal__btns { display: flex; gap: 10px; justify-content: flex-end; }
+
+    .empty { color: var(--weak); font-size: 12px; padding: 10px 2px; }
   </style>
 </head>
 <body>
   <h1>GlassHour <span class="dot">·</span> 琉璃沙漏</h1>
   <div class="sub">液态玻璃桌面倒计时组件 · Windows 10</div>
+
+  <div class="group">
+    <div class="gtitle">倒计时条目</div>
+    <div class="entries" id="entryList"></div>
+
+    <div class="form is-hidden" id="entryForm">
+      <div class="field">
+        <div class="flabel">名称</div>
+        <div class="withcount">
+          <input type="text" id="fTitle" maxlength="20" placeholder="例如：元旦 / 考试 / 发工资" />
+          <span class="count" id="fTitleCount">0/20</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="flabel">截止日期与时间</div>
+        <div class="dt">
+          <input type="date" id="fDate" />
+          <input type="time" id="fTime" step="60" />
+        </div>
+        <div class="hint">可以填过去的时间 —— 会直接进入「已完成」态。</div>
+      </div>
+
+      <div class="field">
+        <div class="flabel">备注（显示在卡片底部）</div>
+        <div class="withcount">
+          <textarea id="fNote" maxlength="40" placeholder="例如：还有三天，错题再过一遍"></textarea>
+          <span class="count" id="fNoteCount">0/40</span>
+        </div>
+        <div class="hint" id="fNoteHint" style="display:none">卡片上会截断显示，悬停可见完整内容。</div>
+      </div>
+
+      <div class="formbtns">
+        <button class="btn danger" id="fDelete">删除这条</button>
+        <button class="btn" id="fCancel">取消</button>
+        <button class="btn primary" id="fSave">保存</button>
+      </div>
+    </div>
+
+    <button class="btn-add" id="addEntry">＋ 新增倒计时</button>
+  </div>
 
   <div class="group">
     <div class="gtitle">模式</div>
@@ -101,19 +223,6 @@
         </div>
       </div>
     </div>
-  </div>
-
-  <div class="group">
-    <div class="gtitle">目标日期倒计时</div>
-    <div class="row">
-      <label>事件名称</label>
-      <div class="grow"><input type="text" id="title" placeholder="例如：元旦 / 考试 / 纪念日" /></div>
-    </div>
-    <div class="row">
-      <label>目标时间</label>
-      <div class="grow"><input type="datetime-local" id="target" step="1" /></div>
-    </div>
-    <div class="hint">主数字显示剩余<b>天数</b>，副行显示时 / 分 / 秒。剩余不足 7 天会进入「紧迫」态。</div>
   </div>
 
   <div class="group">
@@ -149,7 +258,7 @@
         </select>
       </div>
     </div>
-    <div class="hint">若墙纸层钉不上、或组件被桌面图标挡住，把这里改成「兼容模式」。</div>
+    <div class="hint">若壁纸层钉不上、或组件被桌面图标挡住，把这里改成「兼容模式」。</div>
     <div class="row">
       <label>开机自启</label>
       <div class="grow"><input type="checkbox" id="autostart" /> <span class="kv">随 Windows 启动（写入注册表 Run 项）</span></div>
@@ -168,9 +277,19 @@
   </div>
 
   <div class="footer">
-    <button class="btn primary" id="save">保存</button>
     <button class="btn" id="hideWidget">隐藏组件</button>
     <span class="status" id="status"></span>
+  </div>
+
+  <div class="modal is-hidden" id="confirm">
+    <div class="modal__box">
+      <div class="modal__title">删除这条倒计时？</div>
+      <div class="modal__body">将删除 <b id="confirmName">—</b>，此操作不可撤销。</div>
+      <div class="modal__btns">
+        <button class="btn primary" id="confirmCancel">取消</button>
+        <button class="btn" id="confirmDelete">删除</button>
+      </div>
+    </div>
   </div>
 
   <script src="settings.js"></script>

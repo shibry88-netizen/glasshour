@@ -32,10 +32,17 @@ const WALL_STYLE = `
 const DAY = 86400 * 1000;
 const soonISO = new Date(Date.now() + 78 * DAY + 6 * 3600e3 + 12 * 60e3 + 30e3).toISOString();
 
+const E1 = { id: 'e1', title: '元旦', targetISO: soonISO, note: '新的一年，把想做的事都做掉' };
+const E2 = { id: 'e2', title: '考试', targetISO: new Date(Date.now() + 3 * DAY + 5 * 3600e3).toISOString(), note: '还有三天，错题再过一遍' };
+const E3 = { id: 'e3', title: '发工资', targetISO: new Date(Date.now() + 19 * DAY).toISOString(), note: '' };
+
 const base = {
   mode: 'date',
   targetISO: soonISO,
   title: '元旦',
+  note: '',
+  entries: [E1],
+  activeId: 'e1',
   durationSec: 25 * 60,
   timerRunning: false,
   timerEndsAt: 0,
@@ -44,12 +51,27 @@ const base = {
 };
 
 const SHOTS = [
-  { name: '01-date-default', state: { ...base }, note: '日期倒计时 · 默认' },
+  { name: '01-date-default', state: { ...base }, note: '日期倒计时 · 默认（单条）' },
+  {
+    name: '07-date-note',
+    state: { ...base, ...E1, entries: [E1, E2, E3], activeId: 'e1' },
+    note: '单条版：带备注（无切换控件）',
+  },
+  {
+    name: '08-date-multi',
+    state: { ...base, ...E2, entries: [E1, E2, E3], activeId: 'e2' },
+    note: '多条版：第 2/3 条 + 备注 + 切换控件',
+  },
+  {
+    name: '09-date-multi-nonote',
+    state: { ...base, ...E3, entries: [E1, E2, E3], activeId: 'e3' },
+    note: '多条版：末条 + 无备注（› 禁用，备注行不渲染）',
+  },
   { name: '02-date-hover', state: { ...base }, hover: true, note: '日期倒计时 · 悬停' },
   {
     name: '03-date-urgent',
-    state: { ...base, title: '考试', targetISO: new Date(Date.now() + 3 * DAY + 5 * 3600e3).toISOString() },
-    note: '剩余 <7 天 · 紧迫态',
+    state: { ...base, ...E2, entries: [E1, E2, E3], activeId: 'e2' },
+    note: '剩余 <7 天 · 紧迫态（带备注）',
   },
   {
     name: '04-date-done',

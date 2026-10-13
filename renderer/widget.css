@@ -419,3 +419,110 @@ html, body {
   .gh-sheen { animation: none; opacity: 0.06; }
   .gh-card, .gh-big, .gh-seg__thumb { transition: none; }
 }
+
+
+/* ============================================================
+   v1.1 增量：多条目切换控件 + 备注行
+   依据《UI 设计规范 · 增量 v1.1》
+   ============================================================ */
+
+/* 多条目切换控件：T2 胶囊，只有 ≥2 条时才渲染。
+   位置取「模式胶囊右缘 124」与「齿轮左缘 364」的中点 244，胶囊横向自居中，
+   条目数 ≥10 时胶囊自动加宽而不是缩字号。 */
+.gh-entrynav {
+  position: absolute;
+  left: 244px;
+  top: 28px;
+  transform: translateX(-50%);
+  min-width: 96px;
+  height: 28px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.gh-entrynav.is-hidden { display: none; }
+
+.gh-entrynav__btn {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 0;
+  padding: 0;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(236, 232, 224, 0.55);
+  transition: color 160ms ease, background 160ms ease;
+}
+.gh-entrynav__btn:hover:not(:disabled) {
+  color: rgba(236, 232, 224, 0.92);
+  background: rgba(255, 255, 255, 0.08);
+}
+.gh-entrynav__btn:active:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+/* 首尾不循环：到头就禁用（.20，无 hover），滚动方向永远可预期 */
+.gh-entrynav__btn:disabled {
+  color: rgba(236, 232, 224, 0.2);
+  background: transparent;
+  cursor: default;
+}
+.gh-entrynav__btn svg { display: block; }
+
+.gh-entrynav__count {
+  min-width: 40px;
+  padding: 0;
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--gh-font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: rgba(236, 232, 224, 0.92);
+}
+.gh-entrynav__count b { font-weight: 600; }
+.gh-entrynav__count em,
+.gh-entrynav__count i {
+  font-style: normal;
+  font-weight: 400;
+  color: rgba(236, 232, 224, 0.34);
+}
+.gh-entrynav__count i { margin: 0 3px; }
+
+/* 备注行：X20 Y240 W380 H20；空则不渲染，其它元素零位移 */
+.gh-note {
+  position: absolute;
+  left: 20px;
+  top: 240px;
+  width: 380px;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 20px; /* 本体只占 340px，左右各留 20px 呼吸 */
+  text-align: center;
+  font-family: var(--gh-font-cn);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: rgba(236, 232, 224, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gh-note.is-hidden { display: none; }
+/* B 模式不显示备注（按钮占 Y208-246，会贴死）*/
+.gh-card.is-timer .gh-note { display: none; }
+
+/* 切换条目时只让内容做 120ms crossfade，控件一律不动 */
+.gh-swap { animation: gh-swap 120ms ease both; }
+@keyframes gh-swap {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
