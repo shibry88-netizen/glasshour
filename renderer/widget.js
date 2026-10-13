@@ -138,6 +138,7 @@
       card.classList.toggle('is-urgent', !!v.urgent);
       card.classList.toggle('is-done', !!v.done);
       card.classList.toggle('is-paused', v.mode === 'timer' && !v.running);
+      card.classList.toggle('is-locked', !!state.locked);
       card.style.setProperty('--gh-progress', (v.progress * 100).toFixed(2) + '%');
       if (state.opacity != null) card.style.opacity = String(state.opacity);
     }
@@ -172,6 +173,14 @@
     }
 
     // 多条目切换控件：只有 1 条时完全不渲染
+    // 固定按钮：两态由 .is-locked 驱动样式，这里只同步可访问性属性与 tooltip 文案
+    const lockBtn = q('lock');
+    if (lockBtn) {
+      lockBtn.setAttribute('aria-pressed', String(!!state.locked));
+      lockBtn.title = state.locked ? '解除固定' : '固定位置';
+      lockBtn.setAttribute('aria-label', lockBtn.title);
+    }
+
     const nav = q('entry-nav');
     if (nav) nav.classList.toggle('is-hidden', !v.nav.show);
     const cur = q('entry-cur');
@@ -292,6 +301,22 @@
         render();
       });
 
+    const lockBtn = q('lock');
+    if (lockBtn)
+      lockBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        state = await bridge.setState({ locked: !state.locked });
+        render();
+      });
+
+    // 双击卡片打开设置（很多人第一反应是点卡片本身）
+    const dbl = q('drag') || q('card');
+    if (dbl)
+      dbl.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        bridge.openSettings();
+      });
+
     const gear = q('settings');
     if (gear)
       gear.addEventListener('click', (e) => {
@@ -310,10 +335,11 @@
     const drag = q('drag') || q('card');
     if (drag) {
       const NO_DRAG =
-        '[data-gh="mode-btn"],[data-gh="timer-toggle"],[data-gh="timer-reset"],[data-gh="settings"],[data-gh="close"],[data-gh="entry-prev"],[data-gh="entry-next"]';
+        '[data-gh="mode-btn"],[data-gh="timer-toggle"],[data-gh="timer-reset"],[data-gh="settings"],[data-gh="close"],[data-gh="entry-prev"],[data-gh="entry-next"],[data-gh="lock"]';
       drag.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         if (e.target.closest(NO_DRAG)) return;
+        if (state && state.locked) return; // 已固定：拖不动
         bridge.dragStart();
         const move = () => bridge.dragMove();
         const up = () => {

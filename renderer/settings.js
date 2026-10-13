@@ -42,11 +42,12 @@
   const esc = (s) =>
     String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  function status(text) {
+  function status(text, ms) {
     $('status').textContent = text;
-    setTimeout(() => {
+    clearTimeout(status._t);
+    status._t = setTimeout(() => {
       if ($('status').textContent === text) $('status').textContent = '';
-    }, 2400);
+    }, ms || 4200);
   }
 
   /* ---------- 条目列表 ---------- */
@@ -119,7 +120,10 @@
     const targetISO = joinISO($('fDate').value, $('fTime').value);
     const note = $('fNote').value.trim();
     if (!targetISO) {
-      status('请选择截止日期');
+      $('fDate').focus();
+      $('fDate').style.borderColor = 'rgba(201,164,91,.85)';
+      setTimeout(() => { $('fDate').style.borderColor = ''; }, 2600);
+      status('⚠ 还没选截止日期 —— 选好再点「保存」', 6000);
       return;
     }
     if (editingId) {
@@ -134,6 +138,8 @@
     closeForm();
     renderList();
     paintScaffold();
+    const e = findEntry(editingId || state.activeId);
+    if (e) status('已保存并生效 ✓  ' + e.title + ' · ' + e.targetISO.slice(0, 16).replace('T', ' '), 6000);
   }
 
   /* ---------- 删除确认 ---------- */
@@ -285,5 +291,9 @@
   $('hideWidget').addEventListener('click', () => gh.hide());
 
   gh.onState(paint);
-  gh.getState().then(paint);
+  gh.getState().then((s) => {
+    paint(s);
+    // 只有一条时直接把编辑表单摊开 —— 用户打开设置多半就是为了改这条的日期
+    if ((s.entries || []).length === 1) openForm(s.activeId);
+  });
 })();

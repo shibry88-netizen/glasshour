@@ -26,8 +26,8 @@ const store = new Store('config', {
   x: null,
   y: null,
   mode: 'date', // 'date' | 'timer'
-  targetISO: '2027-01-01T00:00:00',
-  title: '元旦',
+  targetISO: '2027-06-07T00:00:00',
+  title: '2027年高考',
   durationSec: 25 * 60,
   desktopLayer: 'auto', // 'auto' | 'workerw' | 'bottom' | 'normal'
   openAtLogin: false,
@@ -35,6 +35,8 @@ const store = new Store('config', {
   opacity: 1,
   entries: [],
   activeId: '',
+  locked: false,
+  migratedGaokao: false,
   timerRunning: false,
   timerEndsAt: 0,
   timerRemaining: 1500,
@@ -86,11 +88,28 @@ function normalizeEntries() {
   if (!Array.isArray(list) || list.length === 0) {
     list = [
       newEntry({
-        title: store.get('title') || '目标日',
-        targetISO: store.get('targetISO') || in30Days(),
+        title: store.get('title') || '2027年高考',
+        targetISO: store.get('targetISO') || '2027-06-07T00:00:00',
         note: '',
       }),
     ];
+  }
+
+  // 一次性迁移：如果用户从没动过，仍停在老的「元旦 / 2027-01-01」预设上，
+  // 就换成新的「2027年高考 / 2027-06-07T00:00:00」（只做一次，动过就不碰）
+  if (!store.get('migratedGaokao')) {
+    const untouched =
+      list.length === 1 &&
+      list[0] &&
+      list[0].title === '元旦' &&
+      list[0].targetISO === '2027-01-01T00:00:00' &&
+      !list[0].note;
+    if (untouched) {
+      list[0].title = '2027年高考';
+      list[0].targetISO = '2027-06-07T00:00:00';
+      log('migrate: 旧预设「元旦/2027-01-01」→「2027年高考 / 2027-06-07T00:00:00」');
+    }
+    store.set('migratedGaokao', true);
   }
   list = list.map((e, i) =>
     Object.assign(newEntry(), e || {}, {
@@ -118,6 +137,7 @@ function updateEntry(id, patch, doBroadcast) {
     if (patch && k in patch) list[i][k] = patch[k];
   }
   store.set('entries', list);
+  log(`entry:update id=${id} -> ${JSON.stringify({ title: list[i].title, targetISO: list[i].targetISO, note: list[i].note })}`);
   if (doBroadcast !== false) {
     refreshTrayMenu();
     broadcast();
@@ -131,6 +151,7 @@ function addEntry(patch) {
   list.push(e);
   store.set('entries', list);
   store.set('activeId', e.id);
+  log(`entry:add id=${e.id} title=${e.title} target=${e.targetISO}（共 ${list.length} 条）`);
   refreshTrayMenu();
   broadcast();
   return e;
@@ -144,6 +165,7 @@ function removeEntry(id) {
   list.splice(i, 1);
   store.set('entries', list);
   if (store.get('activeId') === id) store.set('activeId', list[Math.min(i, list.length - 1)].id);
+  log(`entry:remove id=${id}（剩 ${list.length} 条）`);
   refreshTrayMenu();
   broadcast();
   return { ok: true };
@@ -153,6 +175,7 @@ function setActiveEntry(id) {
   const list = normalizeEntries();
   if (!list.some((e) => e.id === id)) return { ok: false };
   store.set('activeId', id);
+  log(`entry:set-active id=${id}`);
   refreshTrayMenu();
   broadcast();
   return { ok: true };
@@ -499,6 +522,7 @@ function publicState() {
     timerEndsAt: store.get('timerEndsAt') || 0,
     timerRemaining: store.get('timerRemaining'),
     desktopLayer: layerInfo.via,
+    locked: !!store.get('locked'),
     version: app.getVersion(),
     loginItem: currentAutoStart(),
     userData: app.getPath('userData'),
@@ -515,7 +539,7 @@ function broadcast() {
 function registerIpc() {
   ipcMain.handle('state:get', () => publicState());
   ipcMain.handle('state:set', (_e, patch) => {
-    const allowed = ['mode', 'durationSec', 'opacity', 'desktopLayer',
+    const allowed = ['mode', 'durationSec', 'opacity', 'desktopLayer', 'locked',
       'timerRunning', 'timerEndsAt', 'timerRemaining'];
     const clean = {};
     for (const k of Object.keys(patch || {})) if (allowed.includes(k)) clean[k] = patch[k];
@@ -524,7 +548,9 @@ function registerIpc() {
       if (patch && k in patch) entryPatch[k] = patch[k];
     }
     store.patch(clean);
+    if ('locked' in clean) log(`locked -> ${clean.locked}`);
     if (Object.keys(entryPatch).length) updateEntry(store.get('activeId'), entryPatch, false);
+    else log(`state:set ${JSON.stringify(clean)}`);
     if ('desktopLayer' in clean) applyDesktopLayer();
     refreshTrayMenu();
     broadcast();

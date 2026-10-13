@@ -63,6 +63,11 @@ const SHOTS = [
     note: '多条版：第 2/3 条 + 备注 + 切换控件',
   },
   {
+    name: '10-date-locked',
+    state: { ...base, ...E1, entries: [E1], activeId: 'e1', locked: true },
+    note: '已固定：图钉回正染金 + 卡片鎏金内描边',
+  },
+  {
     name: '09-date-multi-nonote',
     state: { ...base, ...E3, entries: [E1, E2, E3], activeId: 'e3' },
     note: '多条版：末条 + 无备注（› 禁用，备注行不渲染）',

@@ -427,11 +427,11 @@ html, body {
    ============================================================ */
 
 /* 多条目切换控件：T2 胶囊，只有 ≥2 条时才渲染。
-   位置取「模式胶囊右缘 124」与「齿轮左缘 364」的中点 244，胶囊横向自居中，
-   条目数 ≥10 时胶囊自动加宽而不是缩字号。 */
+   右侧工具组占 328→392（图钉 + 齿轮），所以空档变成 124→328，中点 226。
+   胶囊横向自居中，条目数变多时自动加宽而不是缩字号。 */
 .gh-entrynav {
   position: absolute;
-  left: 244px;
+  left: 226px;
   top: 28px;
   transform: translateX(-50%);
   min-width: 96px;
@@ -525,4 +525,69 @@ html, body {
 @keyframes gh-swap {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+
+/* ============================================================
+   v1.2 增量：固定（锁定位置）按钮
+   依据《UI 设计规范 · 增量 v1.2》
+   ============================================================ */
+
+/* 图钉按钮 X328 Y28 W28 H28 r14；与齿轮间距 8，右侧工具组 328→392 */
+.gh-pin {
+  position: absolute;
+  left: 328px;
+  top: 28px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  padding: 0;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: rgba(236, 232, 224, 0.34);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: color 160ms linear, background 120ms ease-out;
+}
+.gh-pin:hover { color: rgba(236, 232, 224, 0.55); background: rgba(201, 164, 91, 0.08); }
+.gh-pin:active { color: rgba(236, 232, 224, 0.45); background: rgba(201, 164, 91, 0.14); }
+
+/* 图标：未固定＝绕中心旋转 −18°、无基线；已固定＝回正 + 基线出现（钉进桌面） */
+.gh-pin__ico {
+  display: block;
+  transform: rotate(-18deg);
+  transition: transform 240ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.gh-pin:active .gh-pin__ico { transform: rotate(-18deg) scale(0.92); }
+.gh-pin__base { opacity: 0; transition: opacity 240ms ease-out; }
+
+.gh-card.is-locked .gh-pin { color: rgba(201, 164, 91, 0.8); }
+.gh-card.is-locked .gh-pin:hover { color: #ebd9a8; }
+.gh-card.is-locked .gh-pin:active { color: #c9a45b; }
+.gh-card.is-locked .gh-pin__ico { transform: rotate(0deg); }
+.gh-card.is-locked .gh-pin:active .gh-pin__ico { transform: rotate(0deg) scale(0.92); }
+.gh-card.is-locked .gh-pin__base { opacity: 1; }
+
+/* 已固定的卡片：一圈极淡的鎏金内描边 —— 唯一的「远看可辨」信号。
+   不加光晕、不改投影、不改模糊档，锁定不该造成视觉跳变。 */
+.gh-card.is-locked {
+  cursor: not-allowed;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 0 1px rgba(201, 164, 91, 0.22),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+.gh-card.is-locked:active { cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-pin__ico,
+  .gh-pin__base { transition: none; }
 }

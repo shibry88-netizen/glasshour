@@ -60,6 +60,8 @@ const CASES = [
   { name: '12 条 · 计数器宽度', state: { ...base, ...E12[11], entries: E12, activeId: 'x12' } },
   { name: '紧迫态 + 备注', state: { ...base, ...E2, entries: [E1, E2, E3], activeId: 'e2' } },
   { name: '计时模式', state: { ...base, mode: 'timer', ...E1, entries: [E1, E2, E3], activeId: 'e1' } },
+  { name: '已固定（位置锁定）', state: { ...base, ...E1, entries: [E1], activeId: 'e1', locked: true } },
+  { name: '已固定 + 三条', state: { ...base, ...E2, entries: [E1, E2, E3], activeId: 'e2', locked: true } },
 ];
 
 // 期望值（来自《UI 设计规范 v1.0 / 增量 v1.1》）
@@ -71,7 +73,7 @@ const EXPECT = {
 };
 
 const CONTENT = [
-  'caption', 'big', 'unit', 'sub', 'note', 'settings', 'mode-btn',
+  'caption', 'big', 'unit', 'sub', 'note', 'settings', 'lock', 'mode-btn',
   'entry-nav', 'entry-cur', 'entry-total', 'entry-prev', 'entry-next',
   'timer-toggle', 'timer-reset',
 ];
@@ -242,9 +244,26 @@ function contains(outer, inner) {
     // 4.5) 顶部三件套横向不打架
     const seg = (byName['mode-btn'] || [])[0];
     const gear = (byName['settings'] || [])[0];
-    if (seg && gear && nav && nav.visible) {
+    const lockBtn = (byName['lock'] || [])[0];
+    if (seg && lockBtn && nav && nav.visible) {
       say(seg.right <= nav.left + 0.5, `模式胶囊右缘 ${seg.right} ≤ 切换控件左缘 ${nav.left}`);
-      say(nav.right <= gear.left + 0.5, `切换控件右缘 ${nav.right} ≤ 齿轮左缘 ${gear.left}`);
+      say(nav.right <= lockBtn.left + 0.5, `切换控件右缘 ${nav.right} ≤ 图钉左缘 ${lockBtn.left}`);
+    }
+    if (lockBtn && gear) {
+      say(lockBtn.right <= gear.left + 0.5, `图钉右缘 ${lockBtn.right} ≤ 齿轮左缘 ${gear.left}`);
+    }
+
+    // 4.7) 锁定态
+    const cardEl = data.els.find((e) => e.name === 'card');
+    const pin = (byName['lock'] || [])[0];
+    if (pin) {
+      if (c.state.locked) {
+        say(pin.disabled === false, '已固定时图钉仍可点（否则解不开）');
+      }
+      say(pin.left >= 300 && pin.right <= 400, `图钉在右上工具区 [${pin.left}, ${pin.right}]`);
+    }
+    if (cardEl) {
+      say(true, `卡片光标 = ${(await page.evaluate(() => getComputedStyle(document.querySelector('[data-gh=\"card\"]')).cursor))}`);
     }
 
     // 5) 字号 / 颜色
