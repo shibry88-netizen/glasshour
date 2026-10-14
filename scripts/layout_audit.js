@@ -396,7 +396,8 @@ function contains(outer, inner) {
     }, ['lock', 'settings', 'entry-prev', 'entry-next', 'timer-toggle', 'timer-reset', 'mode-btn']);
     Object.keys(hits).forEach((n) => {
       const floor = n === 'mode-btn' && K === 1 ? 20 : 24;
-      say(hits[n] >= floor, `${n} 命中区 ${hits[n]}px ≥ ${floor}px`);
+      // 探测按 0.5px 步进，点正好落在边界上会被判在外侧 → 留 1px 容差
+      say(hits[n] >= floor - 1, `${n} 命中区 ${hits[n]}px ≥ ${floor}px（含 1px 边界容差）`);
     });
   }
   }
