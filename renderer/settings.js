@@ -171,6 +171,10 @@
     $('opacityVal').textContent = $('opacity').value + '%';
     $('layer').value = state.desktopLayerPref || 'auto';
     $('autostart').checked = !!state.loginItem;
+    $('toggleVisible').textContent = state.visible ? '隐藏组件' : '显示组件';
+    $('toggleVisible').title = state.visible
+      ? '把桌面上的卡片收起来（Ctrl+Alt+G 可恢复）'
+      : '把卡片重新显示到桌面';
     $('locked').checked = !!state.locked;
     $('lockedHint').textContent = state.locked
       ? '已固定：钉在桌面层，位置锁死（解锁才能拖动）'
@@ -301,7 +305,18 @@
     }
   });
 
-  $('hideWidget').addEventListener('click', () => gh.hide());
+  // 隐藏后必须还能找回来：按钮自己变成「显示组件」，并告诉用户快捷键 / 托盘两条路
+  $('toggleVisible').addEventListener('click', async () => {
+    if (state.visible) {
+      const next = await gh.hide();
+      if (next && next.mode) paint(next);
+      status('组件已隐藏 · 双击托盘图标，或按 Ctrl+Alt+G 恢复显示');
+    } else {
+      const next = await gh.show();
+      if (next && next.mode) paint(next);
+      status('组件已显示');
+    }
+  });
 
   gh.onState(paint);
   gh.getState().then((s) => {

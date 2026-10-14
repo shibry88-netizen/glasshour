@@ -77,7 +77,9 @@ function buildDom(state) {
         return window.__STATE__; },
       stepEntry: async () => window.__STATE__,
       onState: () => () => {},
-      openSettings: () => {}, hide: () => {}, resetPosition: async () => {},
+      openSettings: () => {}, resetPosition: async () => {},
+      hide: async () => { window.__CALLS__.push({ fn: 'hide' }); window.__STATE__.visible = false; return window.__STATE__; },
+      show: async () => { window.__CALLS__.push({ fn: 'show' }); window.__STATE__.visible = true; return window.__STATE__; },
       quit: () => {}, openPath: async () => {}, dragStart: () => {}, dragMove: () => {}, dragEnd: () => {},
       platform: 'win32',
     };
@@ -212,6 +214,29 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
   ok(!!lockCall && lockCall.args[0].locked === true, '勾上就发 setState({locked:true}) → 主进程去钉桌面层');
   ok(/已固定/.test(d.getElementById('lockedHint').textContent), `提示文案跟着变：${d.getElementById('lockedHint').textContent}`);
 
+
+
+  console.log('\n===== 9. 隐藏组件后的「找回来」入口 =====');
+  ok(/隐藏组件/.test(d.getElementById('toggleVisible').textContent), `按钮当前是「${d.getElementById('toggleVisible').textContent}」`);
+  calls().length = 0;
+  click(d.getElementById('toggleVisible'));
+  await tick();
+  await tick();
+  ok(calls().some((c) => c.fn === 'hide'), '点一下会调用 hide');
+  ok(
+    /显示组件/.test(d.getElementById('toggleVisible').textContent),
+    `隐藏后按钮自己变成「${d.getElementById('toggleVisible').textContent}」，不再是无路可走`
+  );
+  ok(
+    /Ctrl\+Alt\+G|托盘/.test(d.getElementById('status').textContent),
+    `并明确告诉用户恢复办法：「${d.getElementById('status').textContent}」`
+  );
+  calls().length = 0;
+  click(d.getElementById('toggleVisible'));
+  await tick();
+  await tick();
+  ok(calls().some((c) => c.fn === 'show'), '再点一下会调用 show 把组件叫回来');
+  ok(/隐藏组件/.test(d.getElementById('toggleVisible').textContent), '按钮又变回「隐藏组件」');
 
   console.log(`\n===== 测试结束：${fails === 0 ? '全部通过 ✅' : fails + ' 处失败 ❌'} =====`);
   process.exit(fails === 0 ? 0 : 1);

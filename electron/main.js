@@ -6,7 +6,7 @@
  *  - 设置窗口：独立普通窗口（不钉桌面层）
  *  - 位置记忆、开机自启
  */
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, shell, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('./store');
@@ -22,6 +22,14 @@ const {
 
 const APP_ID = 'com.shibry88.glasshour';
 const ROOT = path.join(__dirname, '..');
+
+// 开机自启时 Windows 会带上这个参数（只为写日志/兜底用，不作为判断依据）
+const AUTOSTART = process.argv.includes('--autostart');
+// 兜底快捷键：即便托盘图标没显示出来，也能把隐藏的组件叫回来
+const HOTKEY = 'Control+Alt+G';
+// 内置托盘兜底图（16px 金沙漏）：assets 里的图标万一没打进包，托盘也不能是空的
+const TRAY_FALLBACK =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABUElEQVR4nJ2TsUsCYRjGf995nUqBoZ7QGZVLQzlGtAX9B0FrixBNjRHZkEEE0dao5D/Q0H8QtDU4SkNDGpWBJ2Ygpufh1yR03kWXz/h+7/PwPO/7fgIIxPWZA4nYARbwh6pAFhrm+7mI68kjiTz1SXRAILMiljCekcyNIwBU1FGypimkUxEU4ewcSChXPrGswc9ySh2VjExOsLk+y/SU86nVtnmpdzCtnjNGTDfkqEhSD1E8XCUcDADQ6dlkzkrUGl+uDIpXsDezy3GxjGVLLFuSu3rwJP/qYIiNlQQAt6X6by3eDv4D1xCHWEtHyW4vAdDp2tyXm/4dGHqYk0waTRVoqiCXWSaphzwFXDNIRIPsbS16rvHy+hHzw7lGV4RWu8/N3avnIbXafQ8HcaOKYN7T358QT4oQMj8eGSSyIIBAVDf2Bezi/ztXJOSbZu3iG1dna8GPwAzpAAAAAElFTkSuQmCC';
 
 // 卡片 420x280 + 四周 20px 阴影留白
 const CARD_W = 420;
@@ -46,6 +54,7 @@ const store = new Store('config', {
   activeId: '',
   locked: false,
   migratedGaokao: false,
+  hiddenTipShown: false,
   timerRunning: false,
   timerEndsAt: 0,
   timerRemaining: 1500,
@@ -536,37 +545,85 @@ function diagnoseLayers() {
 /* 托盘                                                                */
 /* ------------------------------------------------------------------ */
 function trayImage() {
-  for (const name of ['tray.png', 'tray@2x.png', 'icon.png']) {
+  let scale = 1;
+  try {
+    scale = screen.getPrimaryDisplay().scaleFactor || 1;
+  } catch (_) {
+    /* 忽略 */
+  }
+  // 高 DPI 优先吃 32px 的 @2x，普通 DPI 优先 16px 原图（缩小会糊）
+  const names = scale >= 1.5 ? ['tray@2x.png', 'tray.png', 'icon.png'] : ['tray.png', 'tray@2x.png', 'icon.png'];
+  for (const name of names) {
     const p = path.join(ROOT, 'assets', name);
-    if (fs.existsSync(p)) {
-      const img = nativeImage.createFromPath(p);
-      if (!img.isEmpty()) return img.resize({ width: 16, height: 16 });
+    if (!fs.existsSync(p)) continue;
+    const img = nativeImage.createFromPath(p);
+    if (img.isEmpty()) continue;
+    const size = name === 'icon.png' ? 16 : name === 'tray@2x.png' ? 32 : 16;
+    return img.resize({ width: size, height: size, quality: 'best' });
+  }
+  // assets 没打进包（曾经因为这个原因托盘是空图 → 用户找不到恢复入口）
+  log('trayImage: assets 里没有托盘图标，使用内置兜底图');
+  return nativeImage.createFromDataURL(TRAY_FALLBACK);
+}
+
+// 开机自启：写入时用了 args，读取时就必须带上同样的 args，否则永远读回 false
+const LOGIN_ARGS = ['--autostart'];
+
+/**
+ * 读注册表里真实的自启状态。
+ * 必须依次试「带 args / 不带 args / 默认项」三种读法——不同 Electron 与 Windows 组合
+ * 对 args 的处理不一样，只认一种就会出现「明明写进去了，界面却显示没开」。
+ */
+function currentAutoStart() {
+  if (!pin.supported()) {
+    try {
+      return !!app.getLoginItemSettings().openAtLogin;
+    } catch (_) {
+      return !!store.get('openAtLogin');
     }
   }
-  return nativeImage.createEmpty();
+  const probes = [
+    { path: process.execPath, args: LOGIN_ARGS },
+    { path: process.execPath, args: [] },
+    {},
+  ];
+  for (const opt of probes) {
+    try {
+      if (app.getLoginItemSettings(opt).openAtLogin) return true;
+    } catch (_) {
+      /* 试下一种读法 */
+    }
+  }
+  return false;
 }
 
 function setAutoStart(on) {
-  store.set('openAtLogin', !!on);
+  const want = !!on;
+  store.set('openAtLogin', want);
   try {
     app.setLoginItemSettings({
-      openAtLogin: !!on,
+      openAtLogin: want,
       openAsHidden: false,
       path: process.execPath,
-      args: ['--autostart'],
+      args: LOGIN_ARGS,
     });
   } catch (err) {
-    log('setLoginItemSettings failed:', err && err.message);
+    log('setLoginItemSettings(args) failed:', err && err.message);
   }
+  // 写回校验：读不回来就换一种写法再写一次（去掉 args），保证「开机自启」真的落进注册表
+  let readBack = currentAutoStart();
+  if (want && !readBack) {
+    try {
+      app.setLoginItemSettings({ openAtLogin: true, openAsHidden: false, path: process.execPath });
+      readBack = currentAutoStart();
+      log('autostart: 带 args 的写法读不回来，已改用不带 args 的写法，读回=' + readBack);
+    } catch (err) {
+      log('setLoginItemSettings(fallback) failed:', err && err.message);
+    }
+  }
+  log(`autostart: want=${want} 读回=${readBack} execPath=${process.execPath}`);
   refreshTrayMenu();
-}
-
-function currentAutoStart() {
-  try {
-    return app.getLoginItemSettings().openAtLogin;
-  } catch (_) {
-    return !!store.get('openAtLogin');
-  }
+  broadcast();
 }
 
 function setMode(mode) {
@@ -575,20 +632,55 @@ function setMode(mode) {
   refreshTrayMenu();
 }
 
+/** 隐藏组件。隐藏后必须让用户知道怎么找回来：托盘气泡 + 快捷键 + 设置页按钮 */
+function notifyHiddenOnce() {
+  if (!tray || store.get('hiddenTipShown')) return;
+  store.set('hiddenTipShown', true);
+  try {
+    tray.displayBalloon({
+      title: 'GlassHour 已隐藏',
+      content: `双击托盘图标 · 或按 ${HOTKEY.replace('Control+Alt+', 'Ctrl+Alt+')} 就能再叫它出来。`,
+      iconType: 'info',
+    });
+  } catch (err) {
+    log('displayBalloon failed:', err && err.message);
+  }
+}
+
 function showWidget() {
   if (!widget || widget.isDestroyed()) {
     createWidget();
     store.set('visible', true);
+    refreshTrayMenu();
+    broadcast();
     return;
   }
   widget.showInactive();
   store.set('visible', true);
   applyLayer(); // 重新显示后把层级再捋一遍（隐藏期间可能被人挤过）
+  refreshTrayMenu();
+  broadcast();
 }
 
 function hideWidget() {
   if (widget && !widget.isDestroyed()) widget.hide();
   store.set('visible', false);
+  refreshTrayMenu();
+  broadcast();
+  notifyHiddenOnce();
+}
+
+/** Ctrl+Alt+G：显示/隐藏。托盘图标万一不可见，这是最后的兜底入口 */
+function registerHotkey() {
+  try {
+    const ok = globalShortcut.register(HOTKEY, () => {
+      if (store.get('visible')) hideWidget();
+      else showWidget();
+    });
+    log(`hotkey ${HOTKEY}: ${ok ? '已注册' : '注册失败（可能被别的程序占用）'}`);
+  } catch (err) {
+    log('registerHotkey failed:', err && err.message);
+  }
 }
 
 function openSettings() {
@@ -645,6 +737,15 @@ function toggleLock(next) {
 function refreshTrayMenu() {
   if (!tray) return;
   const mode = store.get('mode');
+  try {
+    tray.setToolTip(
+      store.get('visible')
+        ? `GlassHour · 琉璃沙漏（${store.get('locked') ? '已固定' : '可拖动'} · 双击隐藏/显示）`
+        : 'GlassHour · 琉璃沙漏（已隐藏 · 双击或 Ctrl+Alt+G 恢复）'
+    );
+  } catch (_) {
+    /* 忽略 */
+  }
   const items = [
       {
         label: store.get('visible') ? '隐藏组件' : '显示组件',
@@ -718,6 +819,7 @@ function createTray() {
     return;
   }
   tray.setToolTip('GlassHour · 琉璃沙漏');
+  refreshTrayMenu();
   tray.on('double-click', () => (store.get('visible') ? hideWidget() : showWidget()));
   refreshTrayMenu();
 }
@@ -787,7 +889,14 @@ function registerIpc() {
     return publicState();
   });
   ipcMain.handle('ui:open-settings', () => openSettings());
-  ipcMain.handle('ui:hide', () => hideWidget());
+  ipcMain.handle('ui:hide', () => {
+    hideWidget();
+    return publicState();
+  });
+  ipcMain.handle('ui:show', () => {
+    showWidget();
+    return publicState();
+  });
   ipcMain.handle('ui:reset-position', () => {
     resetPosition();
     return true;
@@ -886,10 +995,30 @@ app.whenReady().then(() => {
   createWidget();
   createTray();
 
-  // 同步开机自启的真实状态
+  registerHotkey();
+
+  /*
+   * 开机自启状态同步：以「用户意愿」(store) 为准。
+   * 旧实现是「读回 false 就把用户的设置抹掉」，于是用户勾了自启、界面立刻弹回未勾选，
+   * 看起来就是「开机自启动没用」。现在反过来：不一致就按用户意愿重写一次注册表。
+   */
   const real = currentAutoStart();
-  if (real !== !!store.get('openAtLogin')) store.set('openAtLogin', real);
-  else if (store.get('openAtLogin')) setAutoStart(true);
+  const want = !!store.get('openAtLogin');
+  log(`autostart: 启动同步 注册表=${real} 配置=${want} argv=${JSON.stringify(process.argv.slice(1))}`);
+  if (real !== want) setAutoStart(want);
+
+  /*
+   * 开机自启场景：登录后 Explorer / 桌面还没完全就绪，这时候钉层容易失败。
+   * 前 15 秒里补几次落位（落位是幂等的，重复调用没有副作用）。
+   */
+  if (AUTOSTART) {
+    log('boot: 以开机自启方式启动，15 秒内补做落位');
+    for (const ms of [2000, 6000, 12000]) {
+      setTimeout(() => {
+        if (!quitFlag) applyLayer();
+      }, ms);
+    }
+  }
 
   app.on('activate', () => showWidget());
 });
@@ -900,6 +1029,11 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   quitFlag = true;
+  try {
+    globalShortcut.unregisterAll();
+  } catch (_) {
+    /* 忽略 */
+  }
   stopLayerKeeper();
   stopLayerWatchdog();
   if (saveTimer) clearTimeout(saveTimer);

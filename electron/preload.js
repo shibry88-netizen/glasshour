@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('gh', {
   // 窗口行为
   openSettings: () => ipcRenderer.invoke('ui:open-settings'),
   hide: () => ipcRenderer.invoke('ui:hide'),
+  show: () => ipcRenderer.invoke('ui:show'),
   resetPosition: () => ipcRenderer.invoke('ui:reset-position'),
   quit: () => ipcRenderer.invoke('app:quit'),
   openPath: (p) => ipcRenderer.invoke('shell:open-path', p),

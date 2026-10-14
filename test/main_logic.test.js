@@ -143,6 +143,10 @@ const sent = [];
 const windows = [];
 const menus = [];
 const cursor = { x: 0, y: 0 };
+const registry = { command: null }; // 模拟 Windows 注册表里的启动项命令
+const balloons = [];
+const hotkeys = [];
+let trayImg = null;
 
 class FakeWebContents {
   send(ch, payload) {
@@ -239,16 +243,39 @@ const fakeElectron = {
     on: () => {},
     whenReady: () => Promise.resolve(),
     quit: () => {},
-    setLoginItemSettings: () => {},
-    getLoginItemSettings: () => ({ openAtLogin: false }),
+    // 真实 Electron 在 Windows 上的行为：写入时带 args，读取时若不带同样的 args 就匹配不上
+    setLoginItemSettings: (o) => {
+      const opts = o || {};
+      registry.command = opts.openAtLogin
+        ? opts.args && opts.args.length
+          ? `${opts.path} ${opts.args.join(' ')}`
+          : opts.path
+        : null;
+    },
+    getLoginItemSettings: (o) => {
+      if (!registry.command) return { openAtLogin: false };
+      if (o && o.path) {
+        const want = o.args && o.args.length ? `${o.path} ${o.args.join(' ')}` : o.path;
+        return { openAtLogin: registry.command === want };
+      }
+      return { openAtLogin: false }; // 不传参数 = 不带 args 的默认项，永远匹配不上
+    },
     setAppUserModelId: () => {},
   },
   BrowserWindow: FakeBrowserWindow,
   Tray: class {
+    constructor(img) {
+      trayImg = img;
+    }
     setContextMenu(m) {
       menus.push(m);
     }
-    setToolTip() {}
+    setToolTip(t) {
+      this.tip = t;
+    }
+    displayBalloon(o) {
+      balloons.push(o);
+    }
     on() {}
   },
   Menu: { buildFromTemplate: (t) => t },
@@ -262,8 +289,17 @@ const fakeElectron = {
     getCursorScreenPoint: () => ({ x: cursor.x, y: cursor.y }),
   },
   nativeImage: {
+    // 故意让「从文件读」失败，逼出「assets 缺图标」这条兜底路径
     createFromPath: () => ({ isEmpty: () => true, resize: () => ({}) }),
-    createEmpty: () => ({}),
+    createEmpty: () => ({ __empty: true }),
+    createFromDataURL: (u) => ({ __fallback: true, url: u, resize: () => ({ __fallback: true }) }),
+  },
+  globalShortcut: {
+    register: (k, fn) => {
+      hotkeys.push({ key: k, fn });
+      return true;
+    },
+    unregisterAll: () => {},
   },
   dialog: { showMessageBox: () => {} },
   shell: { openPath: () => {} },
@@ -506,6 +542,46 @@ const cfg = () => JSON.parse(fs.readFileSync(path.join(USER_DATA, 'config.json')
   ok(st14.desktopLayer === 'sink', `生效层级 = ${st14.desktopLayer}`);
   ok(w.movable === false, '兼容模式下依然是「已固定」：拖不动');
   ok(cfg().locked === true, 'locked=true 已落盘');
+
+  console.log('\n===== 16. 开机自启：写进去必须读得回来 =====');
+  let aut = call('login-item:set', true);
+  ok(aut.openAtLogin === true, `开启自启后立刻读回 = ${aut.openAtLogin}（旧实现恒为 false → 开关自己弹回去）`);
+  ok(
+    !!registry.command && registry.command.includes('--autostart'),
+    `注册表启动项已写入：${registry.command}`
+  );
+  ok(cfg().openAtLogin === true, '配置里也记成「要自启」（以用户意愿为准，不再被读回值抹掉）');
+  aut = call('login-item:set', false);
+  ok(aut.openAtLogin === false, '关闭后读回 false');
+  ok(registry.command === null, '注册表项已清除');
+  aut = call('login-item:set', true);
+  ok(call('state:get').loginItem === true, 'state.loginItem = true（设置页勾选框据此渲染，不会弹回）');
+
+  console.log('\n===== 17. 隐藏组件之后必须找得回来 =====');
+  const vis = W();
+  let hid = call('ui:hide');
+  ok(hid.visible === false && vis.isVisible() === false, '组件已隐藏');
+  ok(cfg().visible === false, '隐藏状态已落盘');
+  ok(
+    balloons.length === 1 && /Ctrl\+Alt\+G|托盘/.test(balloons[0].content || ''),
+    `第一次隐藏弹一次托盘气泡，告诉用户怎么恢复：「${(balloons[0] || {}).content || '—'}」`
+  );
+  call('ui:hide');
+  ok(balloons.length === 1, '第二次隐藏不再打扰（只提示一次）');
+  const back = call('ui:show');
+  ok(back.visible === true && vis.isVisible() === true, 'ui:show 能把组件显示回来');
+  ok(cfg().visible === true, '显示状态已落盘');
+  ok(
+    hotkeys.some((h) => h.key === 'Control+Alt+G'),
+    `注册了兜底快捷键 ${hotkeys.map((h) => h.key).join(' / ')}（托盘图标万一看不见也能叫回来）`
+  );
+
+  console.log('\n===== 18. 托盘图标不能是空的 =====');
+  ok(!!trayImg, '托盘图标对象已创建');
+  ok(
+    trayImg && trayImg.__fallback === true,
+    'assets 里图标读不到时会用内置兜底图（旧实现返回空图 → 通知区域什么都看不到）'
+  );
 
   console.log('\n===== 15. 收尾：解锁并恢复默认偏好 =====');
   const st15 = call('state:set', { locked: false, desktopLayer: 'auto' });

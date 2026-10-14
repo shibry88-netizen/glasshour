@@ -35,6 +35,16 @@ else
   echo "== 未提供 CSC_LINK，产物为未签名（用户首次运行会被 SmartScreen 拦，点『仍要运行』）=="
 fi
 
+echo "== 生成图标资产（托盘 16/32、app 512、多尺寸 ico） =="
+# 这些文件必须存在于 assets/ 与 build/：曾经因为 assets/tray.png 没进仓库，
+# 运行时托盘图标是空图，用户在通知区域找不到恢复入口。
+python3 scripts/make_small_icons.py || true
+python3 scripts/make_tray.py
+python3 scripts/make_icons.py || echo "（make_icons.py 跳过：需要 design/icon-1024.png）"
+for f in assets/tray.png assets/tray@2x.png assets/icon.png build/icon.ico; do
+  [ -s "$f" ] || { echo "缺少图标资产: $f" >&2; exit 1; }
+done
+
 echo "== 安装依赖 =="
 npm install --no-audit --no-fund
 
