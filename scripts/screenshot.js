@@ -53,8 +53,9 @@ const base = {
   timerEndsAt: 0,
   timerRemaining: 25 * 60,
   opacity: 1,
-  // 出厂默认 50%（用户要求「现在的组件缩到一半」）；每张图可单独覆盖
-  uiScale: 0.5,
+  // 文档图（01~10）统一按 100% 出，好和 v1.0~v1.2 的图逐像素对照；
+  // 尺寸对照另有 size-{50,65,80,100}-* 一组（见 make_size_sheet.py）
+  uiScale: 1,
 };
 
 const SHOTS = [
