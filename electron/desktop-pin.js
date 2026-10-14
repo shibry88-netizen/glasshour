@@ -31,6 +31,7 @@ const SWP_SHOWWINDOW = 0x0040;
 const HWND_TOP = 0n;
 
 let api = null;
+let cache = { at: 0, value: null };
 
 function toBig(v) {
   if (typeof v === 'bigint') return v;
@@ -133,12 +134,19 @@ function windowRect(win) {
  *   icon      —— 挂着 SHELLDLL_DefView（桌面图标）的那个窗口
  *   wallpaper —— 紧接着 icon 之后的 WorkerW，即真正的壁纸层
  * 枚举按 z 序从顶到底：GetWindow(GW_CHILD) 取最顶，GW_HWNDNEXT 往下走。
+ *
+ * @param {{ensure?: boolean}} [opts] ensure=true 时会先给 Progman 发 0x052C 催生 WorkerW；
+ *        探测 / 守卫这类高频调用一律用 ensure=false，别反复戳 Explorer。
  */
-function desktopWindows() {
+function desktopWindows(opts) {
   if (!supported()) return { progman: 0n, icon: 0n, wallpaper: 0n };
+  const ensure = !!(opts && opts.ensure);
+  const now = Date.now();
+  if (!ensure && cache.at && now - cache.at < 1000) return cache.value;
+
   const a = loadApi();
   const progman = toBig(a.FindWindowW('Progman', null));
-  if (progman) {
+  if (progman && ensure) {
     // 让 Progman 派生出 WorkerW，并把 SHELLDLL_DefView 挪过去
     a.SendMessageTimeoutW(progman, WM_SPAWN_WORKER, 0n, 0n, SMTO_NORMAL, 1000, 0n);
   }
@@ -164,7 +172,22 @@ function desktopWindows() {
     if (w) wallpaper = w;
   }
 
-  return { progman, icon, wallpaper };
+  const value = { progman, icon, wallpaper };
+  cache = { at: now, value };
+  return value;
+}
+
+/** 命中窗口是不是「桌面层一家人」（桌面图标层 / 壁纸层 / Progman）——沿父链往上找 */
+function isDesktopBand(a, hit, d) {
+  if (!hit) return false;
+  if (hit === d.progman || hit === d.icon || hit === d.wallpaper) return true;
+  let h = hit;
+  for (let i = 0; i < 8; i++) {
+    h = toBig(a.GetParent(h));
+    if (!h) return false;
+    if (h === d.progman || h === d.icon || h === d.wallpaper) return true;
+  }
+  return false;
 }
 
 /** 当前窗口的父窗口（0n 表示是顶层窗口） */
@@ -195,7 +218,7 @@ function pinToDesktop(win, opts) {
     const hwnd = hwndOf(win);
     if (!hwnd || !a.IsWindow(hwnd)) return { ok: false, reason: 'no-hwnd' };
 
-    const d = desktopWindows();
+    const d = desktopWindows({ ensure: true }); // 只有钉层时才去催 Explorer 派生 WorkerW
     const parent = target === 'progman' ? d.progman || d.wallpaper : d.wallpaper || d.progman;
     if (!parent) return { ok: false, reason: 'desktop-layer-not-found' };
 
@@ -289,43 +312,57 @@ function sinkAboveDesktop(win) {
 
 /**
  * 真机自检：窗口中心点上，「鼠标到底点得到谁」。
- * WindowFromPoint 命中我们自己（或自己的子窗口）才算通过。
- * 返回 {ok:false} 表示这次探测本身没做成（非 Windows / 窗口隐藏 / FFI 报错），
- * 上层要把它当成「无法判断」而不是「不合格」。
+ *
+ * 三种结论：
+ *   ours=true                  → 通过（点得到自己）
+ *   ours=false + blocked=true  → 不合格：被**桌面层一家人**（桌面图标层/壁纸层）挡住，
+ *                                说明这一级钉下去按钮就点不动了，上层要退下一级
+ *   ours=false + blocked=false → 只是被**普通窗口**（比如你正开着的浏览器）盖住了，
+ *                                判断不了，按通过处理——否则会误伤好方案
+ * 返回 {ok:false} 表示这次探测本身没做成（非 Windows / 窗口隐藏 / FFI 报错），同样算「无法判断」。
  */
 function probeHitTest(win) {
-  if (!supported()) return { ok: false, ours: false, reason: 'not-windows' };
-  if (!win || win.isDestroyed()) return { ok: false, ours: false, reason: 'no-window' };
+  if (!supported()) return { ok: false, ours: false, blocked: false, reason: 'not-windows' };
+  if (!win || win.isDestroyed()) return { ok: false, ours: false, blocked: false, reason: 'no-window' };
   if (typeof win.isVisible === 'function' && !win.isVisible()) {
-    return { ok: false, ours: false, reason: 'hidden' };
+    return { ok: false, ours: false, blocked: false, reason: 'hidden' };
   }
   try {
     const a = loadApi();
     const hwnd = hwndOf(win);
-    if (!hwnd || !a.IsWindow(hwnd)) return { ok: false, ours: false, reason: 'no-hwnd' };
+    if (!hwnd || !a.IsWindow(hwnd)) return { ok: false, ours: false, blocked: false, reason: 'no-hwnd' };
     const rc = ffiRect(a, hwnd);
-    if (!rc) return { ok: false, ours: false, reason: 'no-rect' };
+    if (!rc) return { ok: false, ours: false, blocked: false, reason: 'no-rect' };
     const pt = {
       x: Math.round(rc.x + rc.width / 2),
       y: Math.round(rc.y + rc.height / 2),
     };
     const hit = toBig(a.WindowFromPoint(pt));
-    if (!hit) return { ok: true, ours: false, reason: 'nothing-at-point', pt };
-    const ours = hit === hwnd || !!a.IsChild(hwnd, hit);
+    if (!hit) return { ok: true, ours: false, blocked: false, reason: 'nothing-at-point', pt };
+    if (hit === hwnd || !!a.IsChild(hwnd, hit)) {
+      return { ok: true, ours: true, blocked: false, hit: hit.toString(16), pt, reason: 'hit-ours' };
+    }
+    const blocked = isDesktopBand(a, hit, desktopWindows());
     return {
       ok: true,
-      ours: !!ours,
+      ours: false,
+      blocked,
       hit: hit.toString(16),
       pt,
-      reason: ours ? 'hit-ours' : 'hit-other',
+      reason: blocked ? 'blocked-by-desktop' : 'covered-by-app',
     };
   } catch (err) {
-    return { ok: false, ours: false, reason: 'ffi-error: ' + (err && err.message) };
+    return { ok: false, ours: false, blocked: false, reason: 'ffi-error: ' + (err && err.message) };
   }
+}
+
+function invalidateCache() {
+  cache = { at: 0, value: null };
 }
 
 module.exports = {
   supported,
+  invalidateCache,
   hwndOf,
   windowRect,
   desktopWindows,

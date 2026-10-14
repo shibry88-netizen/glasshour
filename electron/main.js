@@ -374,6 +374,7 @@ function startLayerWatchdog() {
     const parent = pin.parentOf(widget);
     if (parent && parent === layerState.parentHwnd) return;
     log(`watchdog: 桌面层失效（parent=${parent.toString(16)}）→ 重新钉`);
+    pin.invalidateCache();
     applyLayer();
   }, 4000);
 }
@@ -435,6 +436,8 @@ function applyLayer(force) {
     return layerState;
   }
 
+  // 先把「不可拖动」落到窗口样式上，之后钉层的 SetWindowPos 才是位置的最终话语权
+  widget.setMovable(false);
   const pref = sanitizePref(store.get('desktopLayer'));
   const chain = chainFor(pref);
   const tried = [];
@@ -461,7 +464,12 @@ function applyLayer(force) {
       accepted = { layer: cand, via: res.via, parent: res.parent, probe: 'ok' };
       break;
     }
-    log(`layer ${cand} 自检未通过：窗口中心点被 ${p.hit} 挡住，鼠标点不到 → 退下一级`);
+    if (!p.blocked) {
+      // 只是被普通窗口（比如你正开着的浏览器）盖住，判断不了 → 先信这一级，别误伤
+      accepted = { layer: cand, via: res.via, parent: res.parent, probe: 'covered' };
+      break;
+    }
+    log(`layer ${cand} 自检未通过：窗口中心点被桌面层窗口 ${p.hit} 挡住，鼠标点不到 → 退下一级`);
     pin.detachToTopLevel(widget);
   }
 
@@ -478,7 +486,6 @@ function applyLayer(force) {
     probe: accepted.probe,
     parentHwnd: accepted.parent ? BigInt('0x' + accepted.parent) : 0n,
   };
-  widget.setMovable(false);
   if (accepted.layer === 'sink') startLayerKeeper();
   if (accepted.layer === 'workerw' || accepted.layer === 'progman') startLayerWatchdog();
   log(`layer → ${accepted.layer}（${layerLabel(accepted.layer)}）probe=${accepted.probe}`);
@@ -508,7 +515,9 @@ function diagnoseLayers() {
     if (res.ok) {
       const p = pin.probeHitTest(widget);
       if (!p.ok) verdict = '挂载成功（点击自检无法进行：' + p.reason + '）';
-      else verdict = p.ours ? '挂载成功 · 鼠标点得到 ✅' : `挂载成功 · 但鼠标点不到（中心点命中 ${p.hit}）❌`;
+      else if (p.ours) verdict = '挂载成功 · 鼠标点得到 ✅';
+      else if (p.blocked) verdict = `挂载成功 · 但鼠标点不到（中心点命中 ${p.hit}）❌`;
+      else verdict = '挂载成功 · 中心点被别的窗口挡着，判断不了（按通过处理）';
     }
     lines.push(`${layerLabel(cand)}\n    ${verdict}`);
   }
@@ -683,7 +692,13 @@ function refreshTrayMenu() {
               `版本 ${app.getVersion()}\n液态玻璃桌面倒计时组件 for Windows 10\n\n` +
               `位置：${store.get('locked') ? '已固定（不可拖动）' : '未固定（可拖动）'}\n` +
               `当前层级：${layerLabel(layerState.layer)}（偏好：${sanitizePref(store.get('desktopLayer'))}）\n` +
-              `点击自检：${layerState.probe === 'ok' ? '通过' : layerState.probe}\n` +
+              `点击自检：${
+                layerState.probe === 'ok'
+                  ? '通过'
+                  : layerState.probe === 'covered'
+                    ? '被其它窗口挡着，按通过处理'
+                    : layerState.probe
+              }\n` +
               `配置文件：${store.file}\n\nMIT License`,
             buttons: ['好'],
           }),

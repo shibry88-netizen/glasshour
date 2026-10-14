@@ -490,6 +490,15 @@ const cfg = () => JSON.parse(fs.readFileSync(path.join(USER_DATA, 'config.json')
     '压在桌面图标层之上（sink），其它窗口仍然盖得住它'
   );
 
+  console.log('\n===== 13b. 被普通窗口挡住 ≠ 自检不通过（别把好方案误判掉）=====');
+  call('state:set', { locked: false });
+  resetWorld();
+  world.hit = 0x999; // 一个普通应用窗口（不属于桌面层一家人）
+  let st13b = call('state:set', { locked: true });
+  ok(st13b.desktopLayer === 'workerw', `仍按壁纸层钉住（probe=${st13b.desktopLayerProbe}）`);
+  ok(widgetParent() === HWND.wallpaper, '窗口确实挂在壁纸层');
+  world.hit = 'auto';
+
   console.log('\n===== 14. 显式选「兼容模式」：直接用 sink，并保持锁定 =====');
   resetWorld();
   let st14 = call('state:set', { desktopLayer: 'bottom' });
