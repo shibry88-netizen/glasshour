@@ -243,7 +243,10 @@ function contains(outer, inner) {
     const note = (byName['note'] || [])[0];
     const noteText = (c.state.note || '').trim();
     const noteVisible = note && note.visible && c.state.mode === 'date';
-    if (noteText && c.state.mode === 'date') {
+    if (spec.mini) {
+      // 迷你档：备注行整体隐藏（元素取舍是设计决定，不是 bug）
+      say(!noteVisible, `迷你档不渲染备注行（当前 ${noteVisible ? '❌ 仍渲染' : '正确隐藏'}）`);
+    } else if (noteText && c.state.mode === 'date') {
       say(noteVisible, `备注有内容 → 应渲染（当前 ${noteVisible ? '渲染' : '未渲染'}）`);
       if (noteVisible) {
         say(note.text.startsWith(noteText.slice(0, 6)), `备注文本正确：「${note.text}」`);

@@ -570,11 +570,6 @@ html:not([data-scale='1']) .gh-btn {
 }
 html:not([data-scale='1']) .gh-label { text-indent: 0.02em; }
 
-/* 上面那组 ::after 需要宿主元素建立包含块 */
-.gh-seg__btn,
-.gh-btn--primary,
-.gh-btn--ghost { position: relative; }
-
 /* 迷你/小档的命中区下限 24×24（视觉盒可以更小，热区用透明扩展补足。
    50% 档的重置按钮视觉盒只有 22px 高，靠这条补到 24） */
 html:not([data-scale='1']) .gh-pin::after,
