@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('gh', {
   setState: (patch) => ipcRenderer.invoke('state:set', patch),
   setMode: (m) => ipcRenderer.invoke('mode:set', m),
   setLoginItem: (on) => ipcRenderer.invoke('login-item:set', on),
+  setScale: (k) => ipcRenderer.invoke('size:set', k),
   onState: (cb) => {
     const h = (_e, s) => cb(s);
     ipcRenderer.on('state:changed', h);

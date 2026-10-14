@@ -31,12 +31,31 @@ const HOTKEY = 'Control+Alt+G';
 const TRAY_FALLBACK =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABUElEQVR4nJ2TsUsCYRjGf995nUqBoZ7QGZVLQzlGtAX9B0FrixBNjRHZkEEE0dao5D/Q0H8QtDU4SkNDGpWBJ2Ygpufh1yR03kWXz/h+7/PwPO/7fgIIxPWZA4nYARbwh6pAFhrm+7mI68kjiTz1SXRAILMiljCekcyNIwBU1FGypimkUxEU4ewcSChXPrGswc9ySh2VjExOsLk+y/SU86nVtnmpdzCtnjNGTDfkqEhSD1E8XCUcDADQ6dlkzkrUGl+uDIpXsDezy3GxjGVLLFuSu3rwJP/qYIiNlQQAt6X6by3eDv4D1xCHWEtHyW4vAdDp2tyXm/4dGHqYk0waTRVoqiCXWSaphzwFXDNIRIPsbS16rvHy+hHzw7lGV4RWu8/N3avnIbXafQ8HcaOKYN7T358QT4oQMj8eGSSyIIBAVDf2Bezi/ztXJOSbZu3iG1dna8GPwAzpAAAAAElFTkSuQmCC';
 
-// 卡片 420x280 + 四周 20px 阴影留白
+// 卡片 420x280 + 四周 20px 阴影留白（留白全档位不变）
 const CARD_W = 420;
 const CARD_H = 280;
 const PAD = 20;
-const WIN_W = CARD_W + PAD * 2;
-const WIN_H = CARD_H + PAD * 2;
+let WIN_W = CARD_W + PAD * 2;
+let WIN_H = CARD_H + PAD * 2;
+
+/*
+ * 组件大小档位（《设计规范增量 v1.3-s1》）：50 / 65 / 80 / 100。
+ * 50%、65% 是「迷你版式」（渲染层隐藏模式胶囊与备注行、字号有下限），
+ * 80% 是标准版式 ×0.8，100% 与原稿逐像素一致。出厂默认 50%。
+ */
+const SCALES = [0.5, 0.65, 0.8, 1];
+const DEFAULT_SCALE = 0.5;
+
+function normalizeScale(k) {
+  const n = Number(k);
+  return SCALES.includes(n) ? n : DEFAULT_SCALE;
+}
+
+/** 档位 → 窗口尺寸（DIP）：卡片 × 档位 + 40 留白 */
+function winSizeFor(k) {
+  const s = normalizeScale(k);
+  return [Math.round(CARD_W * s) + PAD * 2, Math.round(CARD_H * s) + PAD * 2];
+}
 
 const store = new Store('config', {
   x: null,
@@ -55,6 +74,7 @@ const store = new Store('config', {
   locked: false,
   migratedGaokao: false,
   hiddenTipShown: false,
+  uiScale: DEFAULT_SCALE, // 组件大小：0.5 | 0.65 | 0.8 | 1
   timerRunning: false,
   timerEndsAt: 0,
   timerRemaining: 1500,
@@ -503,6 +523,42 @@ function applyLayer(force) {
   return layerState;
 }
 
+/**
+ * 组件大小换档：窗口尺寸按档位重设。
+ * 锚点是卡片中心（四角等量内收）——角锚点会让卡片向一角「塌陷」，观感是跳一下。
+ */
+function applyScale(k) {
+  const s = normalizeScale(k);
+  const [w, h] = winSizeFor(s);
+  store.set('uiScale', s);
+
+  if (!widget || widget.isDestroyed()) {
+    WIN_W = w;
+    WIN_H = h;
+    broadcast();
+    refreshTrayMenu();
+    return s;
+  }
+
+  const [ox, oy] = widget.getPosition();
+  const [ow, oh] = widget.getSize();
+  const nx = Math.round(ox + (ow - w) / 2);
+  const ny = Math.round(oy + (oh - h) / 2);
+  const cl = clampToWorkArea(nx, ny, w, h, workAreas(), 24); // 保留 ≥24px 可见边
+
+  WIN_W = w;
+  WIN_H = h;
+  // 尺寸变化一定要在「普通顶层窗口」状态上做：子窗口的 SetWindowPos 是父客户区坐标
+  pin.detachToTopLevel(widget);
+  widget.setBounds({ x: cl.x, y: cl.y, width: w, height: h });
+  store.patch({ x: cl.x, y: cl.y });
+  applyLayer();
+  log(`scale → ${s}（窗口 ${w}x${h} @ ${cl.x},${cl.y}${cl.moved ? ' · 越界已拉回工作区' : ''}）`);
+  broadcast();
+  refreshTrayMenu();
+  return s;
+}
+
 /** 逐级自检（托盘菜单里的「桌面层自检」）：把每一级在真机上的结果打给用户看 */
 function diagnoseLayers() {
   if (!pin.supported()) {
@@ -779,6 +835,15 @@ function refreshTrayMenu() {
           { label: '立即重钉一次', click: () => applyLayer() },
         ],
       },
+      {
+        label: '组件大小',
+        submenu: SCALES.map((k) => ({
+          label: `${Math.round(k * 100)}%`,
+          type: 'radio',
+          checked: normalizeScale(store.get('uiScale')) === k,
+          click: () => applyScale(k),
+        })),
+      },
       { label: '桌面层自检…', click: diagnoseLayers },
       { label: '重置窗口位置', click: resetPosition },
       { type: 'separator' },
@@ -850,6 +915,7 @@ function publicState() {
     desktopLayerPref: sanitizePref(store.get('desktopLayer')),
     desktopLayerProbe: layerState.probe || 'skip',
     layerProbeEnabled: !!store.get('layerProbe'),
+    uiScale: normalizeScale(store.get('uiScale')),
     locked: !!store.get('locked'),
     version: app.getVersion(),
     loginItem: currentAutoStart(),
@@ -895,6 +961,10 @@ function registerIpc() {
   });
   ipcMain.handle('ui:show', () => {
     showWidget();
+    return publicState();
+  });
+  ipcMain.handle('size:set', (_e, k) => {
+    applyScale(k);
     return publicState();
   });
   ipcMain.handle('ui:reset-position', () => {
@@ -990,6 +1060,9 @@ function registerIpc() {
 /* 生命周期                                                            */
 /* ------------------------------------------------------------------ */
 app.whenReady().then(() => {
+  const bootSize = winSizeFor(store.get('uiScale'));
+  WIN_W = bootSize[0];
+  WIN_H = bootSize[1];
   normalizeEntries();
   registerIpc();
   createWidget();

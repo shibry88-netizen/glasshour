@@ -127,9 +127,27 @@
   }
 
   /* ---------------- 渲染 ---------------- */
+  // 组件大小：写 <html data-scale>，换档只做瞬时重排 + 120ms 淡入（不逐帧 resize）
+  let lastScale = null;
+  function applyScaleAttr(k) {
+    const el = document.documentElement;
+    const next = String(k || 1);
+    if (el.dataset.scale === next) return;
+    el.dataset.scale = next;
+    const card = q('card');
+    if (card && lastScale !== null) {
+      card.classList.remove('is-rescale');
+      void card.offsetWidth;
+      card.classList.add('is-rescale');
+      setTimeout(() => card.classList.remove('is-rescale'), 140);
+    }
+    lastScale = next;
+  }
+
   function render() {
     if (!state) return;
     const v = computeView();
+    applyScaleAttr(state.uiScale);
 
     const card = q('card');
     if (card) {
@@ -139,6 +157,8 @@
       card.classList.toggle('is-done', !!v.done);
       card.classList.toggle('is-paused', v.mode === 'timer' && !v.running);
       card.classList.toggle('is-locked', !!state.locked);
+      // HH:MM:SS 八字符形态：迷你档要降号，否则单行溢出
+      card.classList.toggle('is-long', /^\d{2}:\d{2}:\d{2}$/.test(String(v.big || '')));
       card.style.setProperty('--gh-progress', (v.progress * 100).toFixed(2) + '%');
       if (state.opacity != null) card.style.opacity = String(state.opacity);
     }

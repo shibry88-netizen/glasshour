@@ -37,6 +37,7 @@ function makeState() {
     desktopLayerProbe: 'ok',
     layerProbeEnabled: true,
     locked: false,
+    uiScale: 0.65,
     version: '1.1.0',
     loginItem: false,
     userData: '/tmp/fake',
@@ -56,6 +57,7 @@ function buildDom(state) {
       setState: async (p) => { window.__CALLS__.push({ fn: 'setState', args: [p] }); Object.assign(window.__STATE__, p); return window.__STATE__; },
       setMode: async (m) => { window.__CALLS__.push({ fn: 'setMode', args: [m] }); window.__STATE__.mode = m; return window.__STATE__; },
       setLoginItem: async (v) => ({ openAtLogin: !!v, userData: '/tmp/fake' }),
+      setScale: async (k) => { window.__CALLS__.push({ fn: 'setScale', args: [k] }); window.__STATE__.uiScale = k; return window.__STATE__; },
       addEntry: async (p) => { window.__CALLS__.push({ fn: 'addEntry', args: [p] });
         const e = Object.assign({ id: 'new1', note: '' }, p);
         window.__STATE__.entries.push(e); window.__STATE__.activeId = e.id;
@@ -237,6 +239,28 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
   await tick();
   ok(calls().some((c) => c.fn === 'show'), '再点一下会调用 show 把组件叫回来');
   ok(/隐藏组件/.test(d.getElementById('toggleVisible').textContent), '按钮又变回「隐藏组件」');
+
+
+  console.log('\n===== 10. 组件大小控件 =====');
+  const sizeBtns = () => [...d.querySelectorAll('#sizeSeg button')];
+  ok(sizeBtns().length === 4, `4 档按钮：${sizeBtns().map((b) => b.textContent).join(' / ')}`);
+  ok(
+    d.querySelector('#sizeSeg button.is-active').dataset.scale === '0.65',
+    `state.uiScale=0.65 时高亮的是 65% 档（当前 ${d.querySelector('#sizeSeg button.is-active').textContent}）`
+  );
+  ok(
+    d.querySelector('#sizeSeg button[data-scale="0.65"]').getAttribute('aria-checked') === 'true',
+    'aria-checked 同步（无障碍）'
+  );
+  ok(/隐藏备注与模式切换/.test(d.getElementById('sizeHint').textContent), `小档注解：${d.getElementById('sizeHint').textContent}`);
+  calls().length = 0;
+  click(d.querySelector('#sizeSeg button[data-scale="1"]'));
+  await tick();
+  await tick();
+  const scCall = calls().find((c) => c.fn === 'setScale');
+  ok(!!scCall && scCall.args[0] === 1, '点 100% 会走 size:set(1)');
+  ok(d.querySelector('#sizeSeg button.is-active').dataset.scale === '1', '高亮跟着换到 100%');
+  ok(/完整版式/.test(d.getElementById('sizeHint').textContent), `大档注解：${d.getElementById('sizeHint').textContent}`);
 
   console.log(`\n===== 测试结束：${fails === 0 ? '全部通过 ✅' : fails + ' 处失败 ❌'} =====`);
   process.exit(fails === 0 ? 0 : 1);

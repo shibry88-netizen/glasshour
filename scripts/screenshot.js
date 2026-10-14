@@ -19,8 +19,13 @@ const OUT = process.argv[2] || path.join(ROOT, 'design', 'shots');
 const PAGE = 'file://' + path.join(ROOT, 'renderer', 'index.html');
 const WALL = path.join(ROOT, 'design', 'mock', 'wallpaper.png');
 
-// 组件窗口 = 卡片 420x280 + 四周 20px 阴影留白
-const VIEW = { width: 460, height: 320 };
+// 组件窗口 = 卡片 ×档位 + 四周 20px 阴影留白（设计规范增量 v1.3-s1）
+const SCALE_VIEW = {
+  0.5: { width: 250, height: 180 },
+  0.65: { width: 313, height: 222 },
+  0.8: { width: 376, height: 264 },
+  1: { width: 460, height: 320 },
+};
 // 组件默认摆在屏幕右下角，截壁纸右下角那块，最接近真机
 const WALL_STYLE = `
   html, body {
@@ -48,6 +53,8 @@ const base = {
   timerEndsAt: 0,
   timerRemaining: 25 * 60,
   opacity: 1,
+  // 出厂默认 50%（用户要求「现在的组件缩到一半」）；每张图可单独覆盖
+  uiScale: 0.5,
 };
 
 const SHOTS = [
@@ -103,6 +110,20 @@ const SHOTS = [
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
+  // 组件大小档位的对照图：同一状态在 50 / 65 / 80 / 100 下各出一张
+  const SIZE_STATES = ['01-date-default', '03-date-urgent', '05-timer-running', '08-date-multi'];
+  const sizeShots = [];
+  for (const k of [0.5, 0.65, 0.8, 1]) {
+    for (const nm of SIZE_STATES) {
+      const src = SHOTS.find((x) => x.name === nm);
+      if (!src) continue;
+      sizeShots.push({
+        name: `size-${Math.round(k * 100)}-${nm.replace(/^\d+-/, '')}`,
+        state: Object.assign({}, src.state, { uiScale: k }),
+        note: `${src.note} · 组件大小 ${Math.round(k * 100)}%`,
+      });
+    }
+  }
   if (!fs.existsSync(WALL)) {
     console.error('缺少壁纸：' + WALL + '\n请先运行： python3 scripts/make_wallpaper.py');
     process.exit(1);
@@ -110,13 +131,15 @@ const SHOTS = [
 
   const browser = await chromium.launch({ args: ['--force-color-profile=srgb'] });
   const ctx = await browser.newContext({
-    viewport: VIEW,
+    viewport: SCALE_VIEW[0.5],
     deviceScaleFactor: 2,
     colorScheme: 'dark',
   });
   const page = await ctx.newPage();
 
-  for (const shot of SHOTS) {
+  for (const shot of SHOTS.concat(sizeShots)) {
+    const k = Number(shot.state.uiScale) || 0.5;
+    await page.setViewportSize(SCALE_VIEW[k] || SCALE_VIEW[0.5]);
     await page.addInitScript((s) => {
       window.__GH_MOCK__ = s;
     }, Object.assign({ now: Date.now() }, shot.state));

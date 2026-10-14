@@ -223,6 +223,11 @@ class FakeBrowserWindow {
   getSize() {
     return [this._size.width, this._size.height];
   }
+  setBounds(b) {
+    if (b && b.width) this._size.width = b.width;
+    if (b && b.height) this._size.height = b.height;
+    if (b) this.setPosition(b.x, b.y);
+  }
   getBounds() {
     return { x: this._pos.x, y: this._pos.y, width: this._size.width, height: this._size.height };
   }
@@ -438,12 +443,12 @@ const cfg = () => JSON.parse(fs.readFileSync(path.join(USER_DATA, 'config.json')
   cursor.x = p0[0] + 50;
   cursor.y = p0[1] + 40;
   call('on:drag:start');
-  cursor.x = p0[0] + 250; // 往右下拖 +200
-  cursor.y = p0[1] + 140; // 往右下拖 +100
+  cursor.x = p0[0] - 150; // 往左上拖 −200
+  cursor.y = p0[1] - 60; // 往左上拖 −100
   call('on:drag:move');
   call('on:drag:end');
   const p1 = w.getPosition();
-  ok(p1[0] === p0[0] + 200 && p1[1] === p0[1] + 100, `拖动跟随鼠标：${p0.join(',')} → ${p1.join(',')}`);
+  ok(p1[0] === p0[0] - 200 && p1[1] === p0[1] - 100, `拖动跟随鼠标：${p0.join(',')} → ${p1.join(',')}`);
   await new Promise((r) => setTimeout(r, 500));
   ok(cfg().x === p1[0] && cfg().y === p1[1], `新位置已落盘 (${cfg().x},${cfg().y})`);
 
@@ -582,6 +587,30 @@ const cfg = () => JSON.parse(fs.readFileSync(path.join(USER_DATA, 'config.json')
     trayImg && trayImg.__fallback === true,
     'assets 里图标读不到时会用内置兜底图（旧实现返回空图 → 通知区域什么都看不到）'
   );
+
+  console.log('\n===== 19. 组件大小：窗口尺寸 + 中心锚点 =====');
+  const ws = W();
+  let sc = call('size:set', 1);
+  ok(sc.uiScale === 1 && cfg().uiScale === 1, `100% 档已落盘（窗口 ${ws.getSize().join('x')}）`);
+  const c0x = ws.getPosition()[0] + ws.getSize()[0] / 2;
+  const c0y = ws.getPosition()[1] + ws.getSize()[1] / 2;
+  sc = call('size:set', 0.5);
+  const [ax, ay] = ws.getPosition();
+  const [aw, ah] = ws.getSize();
+  ok(aw === 250 && ah === 180, `50% 档窗口 = ${aw}x${ah}（卡片 210x140 + 40 投影留白）`);
+  ok(
+    Math.abs(ax + aw / 2 - c0x) <= 1 && Math.abs(ay + ah / 2 - c0y) <= 1,
+    `中心锚点：卡片中心漂移 ≤1px（${c0x},${c0y} → ${ax + aw / 2},${ay + ah / 2}）`
+  );
+  ok(sc.uiScale === 0.5 && cfg().uiScale === 0.5, '50% 已落盘（出厂默认）');
+  call('size:set', 0.8);
+  ok(ws.getSize().join('x') === '376x264', `80% 档窗口 = ${ws.getSize().join('x')}`);
+  call('size:set', 0.65);
+  ok(ws.getSize().join('x') === '313x222', `65% 档窗口 = ${ws.getSize().join('x')}`);
+  sc = call('size:set', 0.73);
+  ok(sc.uiScale === 0.5, '非法档位（0.73）回落到默认 50%');
+  sc = call('size:set', 0.5);
+  ok(sc.uiScale === 0.5, '回到 50%');
 
   console.log('\n===== 15. 收尾：解锁并恢复默认偏好 =====');
   const st15 = call('state:set', { locked: false, desktopLayer: 'auto' });

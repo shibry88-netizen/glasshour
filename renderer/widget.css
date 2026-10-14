@@ -1,7 +1,12 @@
 /* ============================================================
    GlassHour · 液态玻璃组件卡片
-   严格按《GlassHour · UI 设计规范 v1.0（设计师产出）》实现
+   严格按《GlassHour · UI 设计规范》实现（v1.0 + v1.1 + v1.2 + v1.3-s1）
    画布：卡片 420x280，窗口 460x320（四周 20px 给投影）
+   组件大小：<html data-scale="0.5 | 0.65 | 0.8 | 1">
+     · 100% 档 = 原样逐像素不变
+     · 80% 档 = 标准版式 ×0.8（字号走钳制，玻璃参数不变）
+     · 65% / 50% 档 = 迷你版式：隐藏模式胶囊与备注行、重排但字号有下限
+     · 严禁 transform: scale()——1px 描边会变亚像素发灰、噪点被插值糊掉、CJK 字形糊
    ============================================================ */
 
 :root {
@@ -24,11 +29,99 @@
 
 * { box-sizing: border-box; }
 
+/* ============================================================
+   组件大小 token（设计规范增量 v1.3-s1）
+   ============================================================ */
+
+/* ---------------- 100%（基准，逐像素等于 v1.2） ---------------- */
+html[data-scale='1'] {
+  --win-w: 460px; --win-h: 320px;
+  --card-w: 420px; --card-h: 280px; --card-r: 20px;
+  --bar-y: 28px; --ctl: 28px; --ico: 14px;
+  --seg-display: flex;
+  --seg-left: 28px; --seg-w: 96px; --seg-pad: 4px;
+  --seg-thumb-w: 44px; --seg-thumb-h: 20px; --seg-fs: 12px;
+  --nav-center: 1; --nav-left: 226px; --nav-minw: 96px; --nav-h: 28px; --nav-btn: 28px; --nav-fs: 12px;
+  --pin-left: 328px; --gear-left: 364px;
+  --label-left: 20px; --label-y: 84px; --label-w: 380px; --label-h: 18px; --label-fs: 13px;
+  --big-left: 20px; --big-y: 96px; --big-w: 380px; --big-h: 110px;
+  --big-ty: 100px; --big-th: 100px;
+  --big-fs: 96px; --big-fs-timer: 88px; --big-fs-timer-long: 88px;
+  --unit-fs: 20px; --unit-ml: 8px; --unit-pb: 14px;
+  --sub-y: 214px; --sub-h: 22px; --sub-fs: 15px; --sub-ls: 0.08em; --sub-fw: 400;
+  --note-display: block; --note-y: 240px; --note-h: 20px; --note-fs: 12px; --note-pad: 20px;
+  --pbtn-left: 150px; --pbtn-y: 208px; --pbtn-w: 120px; --pbtn-h: 38px; --pbtn-fs: 14px;
+  --gbtn-left: 312px; --gbtn-y: 212px; --gbtn-w: 68px; --gbtn-h: 30px; --gbtn-fs: 12px;
+}
+
+/* ---------------- 80%（标准版式 ×0.8） ---------------- */
+html[data-scale='0.8'] {
+  --win-w: 376px; --win-h: 264px;
+  --card-w: 336px; --card-h: 224px; --card-r: 16px;
+  --bar-y: 22px; --ctl: 22px; --ico: 12px;
+  --seg-display: flex;
+  --seg-left: 22px; --seg-w: 77px; --seg-pad: 3px;
+  --seg-thumb-w: 35px; --seg-thumb-h: 16px; --seg-fs: 11px;
+  --nav-center: 1; --nav-left: 157px; --nav-minw: 77px; --nav-h: 22px; --nav-btn: 22px; --nav-fs: 11px;
+  --pin-left: 262px; --gear-left: 291px;
+  --label-left: 16px; --label-y: 67px; --label-w: 304px; --label-h: 14px; --label-fs: 11px;
+  --big-left: 16px; --big-y: 80px; --big-w: 304px; --big-h: 85px;
+  --big-ty: 80px; --big-th: 85px;
+  --big-fs: 77px; --big-fs-timer: 70px; --big-fs-timer-long: 70px;
+  --unit-fs: 16px; --unit-ml: 6px; --unit-pb: 11px;
+  --sub-y: 171px; --sub-h: 18px; --sub-fs: 12px; --sub-ls: 0.02em; --sub-fw: 500;
+  --note-display: block; --note-y: 192px; --note-h: 16px; --note-fs: 11px; --note-pad: 16px;
+  --pbtn-left: 120px; --pbtn-y: 166px; --pbtn-w: 96px; --pbtn-h: 30px; --pbtn-fs: 11px;
+  --gbtn-left: 250px; --gbtn-y: 170px; --gbtn-w: 54px; --gbtn-h: 24px; --gbtn-fs: 11px;
+}
+
+/* ---------------- 65%（迷你版式） ---------------- */
+html[data-scale='0.65'] {
+  --win-w: 313px; --win-h: 222px;
+  --card-w: 273px; --card-h: 182px; --card-r: 13px;
+  --bar-y: 10px; --ctl: 31px; --ico: 16px;
+  --seg-display: none;
+  --seg-left: 16px; --seg-w: 0px; --seg-pad: 3px;
+  --seg-thumb-w: 0px; --seg-thumb-h: 0px; --seg-fs: 11px;
+  --nav-center: 0; --nav-left: 16px; --nav-minw: 83px; --nav-h: 26px; --nav-btn: 26px; --nav-fs: 11px;
+  --pin-left: 187px; --gear-left: 226px;
+  --label-left: 16px; --label-y: 50px; --label-w: 241px; --label-h: 21px; --label-fs: 11px;
+  --big-left: 16px; --big-y: 73px; --big-w: 241px; --big-h: 75px;
+  --big-ty: 73px; --big-th: 75px;
+  --big-fs: 62px; --big-fs-timer: 57px; --big-fs-timer-long: 51px;
+  --unit-fs: 14px; --unit-ml: 5px; --unit-pb: 8px;
+  --sub-y: 153px; --sub-h: 18px; --sub-fs: 11px; --sub-ls: 0.02em; --sub-fw: 500;
+  --note-display: none; --note-y: 0px; --note-h: 0px; --note-fs: 11px; --note-pad: 0px;
+  --pbtn-left: 57px; --pbtn-y: 146px; --pbtn-w: 109px; --pbtn-h: 34px; --pbtn-fs: 11px;
+  --gbtn-left: 177px; --gbtn-y: 148px; --gbtn-w: 68px; --gbtn-h: 29px; --gbtn-fs: 11px;
+}
+
+/* ---------------- 50%（迷你版式 · 出厂默认） ---------------- */
+html[data-scale='0.5'] {
+  --win-w: 250px; --win-h: 180px;
+  --card-w: 210px; --card-h: 140px; --card-r: 10px;
+  --bar-y: 8px; --ctl: 24px; --ico: 12px;
+  --seg-display: none;
+  --seg-left: 12px; --seg-w: 0px; --seg-pad: 2px;
+  --seg-thumb-w: 0px; --seg-thumb-h: 0px; --seg-fs: 11px;
+  --nav-center: 0; --nav-left: 12px; --nav-minw: 64px; --nav-h: 20px; --nav-btn: 20px; --nav-fs: 11px;
+  --pin-left: 144px; --gear-left: 174px;
+  --label-left: 12px; --label-y: 38px; --label-w: 186px; --label-h: 16px; --label-fs: 11px;
+  --big-left: 12px; --big-y: 56px; --big-w: 186px; --big-h: 58px;
+  --big-ty: 56px; --big-th: 58px;
+  --big-fs: 48px; --big-fs-timer: 44px; --big-fs-timer-long: 38px;
+  --unit-fs: 14px; --unit-ml: 4px; --unit-pb: 6px;
+  --sub-y: 118px; --sub-h: 14px; --sub-fs: 11px; --sub-ls: 0.02em; --sub-fw: 500;
+  --note-display: none; --note-y: 0px; --note-h: 0px; --note-fs: 11px; --note-pad: 0px;
+  --pbtn-left: 44px; --pbtn-y: 112px; --pbtn-w: 84px; --pbtn-h: 26px; --pbtn-fs: 11px;
+  --gbtn-left: 136px; --gbtn-y: 114px; --gbtn-w: 52px; --gbtn-h: 22px; --gbtn-fs: 11px;
+}
+
 html, body {
   margin: 0;
   padding: 0;
-  width: 460px;
-  height: 320px;
+  width: var(--win-w, 460px);
+  height: var(--win-h, 320px);
   background: transparent;
   overflow: hidden;
   user-select: none;
@@ -37,29 +130,29 @@ html, body {
 
 .gh-stage {
   position: relative;
-  width: 460px;
-  height: 320px;
+  width: var(--win-w, 460px);
+  height: var(--win-h, 320px);
 }
 
 /* ---------------- 卡片主体（T1 玻璃） ---------------- */
 .gh-card {
   position: absolute;
-  left: 20px;
+  left: 20px; /* 投影留白：全档位不变 */
   top: 20px;
-  width: 420px;
-  height: 280px;
-  border-radius: 20px;
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: var(--card-r);
   overflow: hidden;
 
   background: linear-gradient(160deg, rgba(18, 20, 24, 0.62), rgba(9, 10, 12, 0.72));
-  backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%); /* 玻璃是材质：全档位恒定，不随几何缩放 */
   -webkit-backdrop-filter: blur(28px) saturate(140%);
 
   box-shadow:
     0 24px 60px rgba(0, 0, 0, 0.45),
     0 4px 12px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14), /* 描边恒 1px，不许 0.5px */
     inset 0 0 0 2px rgba(255, 255, 255, 0.05);
 
   transition:
@@ -72,22 +165,22 @@ html, body {
 }
 .gh-card:active { cursor: grabbing; }
 
-/* 左上角金色内晕，增加玻璃的「厚度感」 */
+/* 左上角金色内晕（百分比定位：小卡不错位） */
 .gh-card__tint {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(340px 200px at 8% -12%, rgba(201, 164, 91, 0.1), transparent 62%),
-    radial-gradient(300px 220px at 106% 112%, rgba(140, 107, 46, 0.09), transparent 60%);
+    radial-gradient(81% 71% at 8% -12%, rgba(201, 164, 91, 0.1), transparent 62%),
+    radial-gradient(71% 79% at 106% 112%, rgba(140, 107, 46, 0.09), transparent 60%);
 }
 
-/* ---------------- 高光扫过：7s 循环，扫条 220px / skewX(-18deg) ---------------- */
+/* ---------------- 高光扫过：7s 循环；尺寸/行程按百分比，随卡片缩放 ---------------- */
 .gh-sheen {
   position: absolute;
   top: -25%;
   left: 0;
-  width: 220px;
+  width: 52%; /* ≈220px @420 卡片宽 */
   height: 150%;
   pointer-events: none;
   opacity: 0;
@@ -102,14 +195,14 @@ html, body {
   will-change: transform, opacity;
 }
 @keyframes gh-sheen {
-  0%   { transform: translateX(-300px) skewX(-18deg); opacity: 0; }
+  0%   { transform: translateX(-136%) skewX(-18deg); opacity: 0; }
   7%   { opacity: 0.18; }
-  62%  { transform: translateX(520px) skewX(-18deg); opacity: 0.18; }
-  68%  { transform: translateX(560px) skewX(-18deg); opacity: 0; }
-  100% { transform: translateX(560px) skewX(-18deg); opacity: 0; }
+  62%  { transform: translateX(236%) skewX(-18deg); opacity: 0.18; }
+  68%  { transform: translateX(255%) skewX(-18deg); opacity: 0; }
+  100% { transform: translateX(255%) skewX(-18deg); opacity: 0; }
 }
 
-/* ---------------- 极细噪点 ---------------- */
+/* ---------------- 极细噪点（tile 固定，不随档位缩放） ---------------- */
 .gh-noise {
   position: absolute;
   inset: 0;
@@ -119,16 +212,16 @@ html, body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* ---------------- 模式切换胶囊：X28 Y28 W96 H28 ---------------- */
+/* ---------------- 模式切换胶囊（迷你档隐藏，模式改走设置页/托盘） ---------------- */
 .gh-seg {
   position: absolute;
-  left: 28px;
-  top: 28px;
-  width: 96px;
-  height: 28px;
-  border-radius: 14px;
-  padding: 4px;
-  display: flex;
+  left: var(--seg-left);
+  top: var(--bar-y);
+  width: var(--seg-w);
+  height: var(--ctl);
+  border-radius: calc(var(--ctl) / 2);
+  padding: var(--seg-pad);
+  display: var(--seg-display);
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
   backdrop-filter: blur(16px) saturate(130%);
   -webkit-backdrop-filter: blur(16px) saturate(130%);
@@ -138,11 +231,11 @@ html, body {
 }
 .gh-seg__thumb {
   position: absolute;
-  left: 4px;
-  top: 4px;
-  width: 44px;
-  height: 20px;
-  border-radius: 10px;
+  left: var(--seg-pad);
+  top: var(--seg-pad);
+  width: var(--seg-thumb-w);
+  height: var(--seg-thumb-h);
+  border-radius: calc(var(--seg-thumb-h) / 2);
   z-index: 1;
   background: linear-gradient(160deg, var(--gh-gold-lt), var(--gh-gold-dk));
   box-shadow:
@@ -150,39 +243,38 @@ html, body {
     0 6px 18px rgba(201, 164, 91, 0.28);
   transition: transform 240ms cubic-bezier(0.34, 1.2, 0.64, 1);
 }
-.gh-card.is-timer .gh-seg__thumb { transform: translateX(44px); }
+.gh-card.is-timer .gh-seg__thumb { transform: translateX(var(--seg-thumb-w)); }
 
 .gh-seg__btn {
   position: relative;
   z-index: 2;
-  flex: 1 1 44px;
+  flex: 1 1 calc(var(--seg-thumb-w) * 0.9);
   border: 0;
   background: transparent;
   padding: 0;
   font-family: var(--gh-font-cn);
-  font-size: 12px;
+  font-size: var(--seg-fs);
   font-weight: 500;
   letter-spacing: 0.06em;
-  line-height: 20px;
+  line-height: var(--seg-thumb-h);
   color: rgba(236, 232, 224, 0.46);
   cursor: pointer;
   transition: color 200ms ease;
 }
 .gh-seg__btn.is-active { color: #2a1e08; font-weight: 600; }
 
-/* ---------------- 齿轮：X364 Y28 W28 H28 ---------------- */
-.gh-gear {
+/* ---------------- 齿轮 / 图钉（右侧工具组；任何档位都必须在） ---------------- */
+.gh-gear,
+.gh-pin {
   position: absolute;
-  left: 364px;
-  top: 28px;
-  width: 28px;
-  height: 28px;
-  border-radius: 14px;
+  top: var(--bar-y);
+  width: var(--ctl);
+  height: var(--ctl);
+  border-radius: calc(var(--ctl) / 2);
   border: 0;
   padding: 0;
   display: grid;
   place-items: center;
-  color: var(--gh-t2);
   cursor: pointer;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
   backdrop-filter: blur(16px) saturate(130%);
@@ -190,21 +282,120 @@ html, body {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.gh-gear {
+  left: var(--gear-left);
+  color: var(--gh-t2);
   transition: color 200ms ease, transform 300ms var(--gh-ease-hover);
 }
 .gh-gear:hover { color: var(--gh-gold-lt); transform: rotate(35deg); }
+.gh-pin {
+  left: var(--pin-left);
+  color: rgba(236, 232, 224, 0.34);
+  transition: color 160ms linear, background 120ms ease-out;
+}
+.gh-pin:hover { color: rgba(236, 232, 224, 0.55); background: rgba(201, 164, 91, 0.08); }
+.gh-pin:active { color: rgba(236, 232, 224, 0.45); background: rgba(201, 164, 91, 0.14); }
+.gh-gear svg,
+.gh-pin svg { width: var(--ico); height: var(--ico); }
 
-/* ---------------- 事件标签：X20 Y84 W380 H18 ---------------- */
+/* 图标：未固定＝绕中心旋转 −18°、无基线；已固定＝回正 + 基线出现（钉进桌面） */
+.gh-pin__ico {
+  display: block;
+  transform: rotate(-18deg);
+  transition: transform 240ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.gh-pin:active .gh-pin__ico { transform: rotate(-18deg) scale(0.92); }
+.gh-pin__base { opacity: 0; transition: opacity 240ms ease-out; }
+
+.gh-card.is-locked .gh-pin { color: rgba(201, 164, 91, 0.8); }
+.gh-card.is-locked .gh-pin:hover { color: #ebd9a8; }
+.gh-card.is-locked .gh-pin:active { color: #c9a45b; }
+.gh-card.is-locked .gh-pin__ico { transform: rotate(0deg); }
+.gh-card.is-locked .gh-pin:active .gh-pin__ico { transform: rotate(0deg) scale(0.92); }
+.gh-card.is-locked .gh-pin__base { opacity: 1; }
+
+/* 多条目切换胶囊：100%/80% 居中；迷你档左对齐（空档更窄） */
+.gh-entrynav {
+  position: absolute;
+  left: var(--nav-left);
+  top: var(--bar-y);
+  transform: translateX(calc(var(--nav-center) * -50%));
+  min-width: var(--nav-minw);
+  height: var(--nav-h);
+  border-radius: calc(var(--nav-h) / 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.gh-entrynav.is-hidden { display: none; }
+
+.gh-entrynav__btn {
+  position: relative;
+  width: var(--nav-btn);
+  height: var(--nav-btn);
+  flex: 0 0 var(--nav-btn);
+  border: 0;
+  padding: 0;
+  border-radius: calc(var(--nav-btn) / 2);
+  display: grid;
+  place-items: center;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(236, 232, 224, 0.55);
+  transition: color 160ms ease, background 160ms ease;
+}
+.gh-entrynav__btn:hover:not(:disabled) {
+  color: rgba(236, 232, 224, 0.92);
+  background: rgba(255, 255, 255, 0.08);
+}
+.gh-entrynav__btn:active:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+/* 首尾不循环：到头就禁用（.20，无 hover），滚动方向永远可预期 */
+.gh-entrynav__btn:disabled {
+  color: rgba(236, 232, 224, 0.2);
+  background: transparent;
+  cursor: default;
+}
+.gh-entrynav__btn svg { display: block; }
+
+.gh-entrynav__count {
+  min-width: calc(var(--nav-minw) * 0.42);
+  padding: 0;
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--gh-font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--nav-fs);
+  letter-spacing: 0.02em;
+  color: rgba(236, 232, 224, 0.92);
+}
+.gh-entrynav__count b { font-weight: 600; }
+.gh-entrynav__count em,
+.gh-entrynav__count i {
+  font-style: normal;
+  font-weight: 400;
+  color: rgba(236, 232, 224, 0.34);
+}
+.gh-entrynav__count i { margin: 0 3px; }
+
+/* ---------------- 事件标签 ---------------- */
 .gh-label {
   position: absolute;
-  left: 20px;
-  top: 84px;
-  width: 380px;
-  height: 18px;
-  line-height: 18px;
+  left: var(--label-left);
+  top: var(--label-y);
+  width: var(--label-w);
+  height: var(--label-h);
+  line-height: var(--label-h);
   text-align: center;
   font-family: var(--gh-font-cn);
-  font-size: 13px;
+  font-size: var(--label-fs);
   font-weight: 500;
   letter-spacing: 0.18em;
   text-indent: 0.18em;
@@ -214,13 +405,13 @@ html, body {
   text-overflow: ellipsis;
 }
 
-/* ---------------- 主数字块：X20 Y100 W380 H106 ---------------- */
+/* ---------------- 主数字块 ---------------- */
 .gh-bigline {
   position: absolute;
-  left: 20px;
-  top: 96px;
-  width: 380px;
-  height: 110px;
+  left: var(--big-left);
+  top: var(--big-y);
+  width: var(--big-w);
+  height: var(--big-h);
   display: flex;
   align-items: baseline;
   justify-content: center;
@@ -228,7 +419,7 @@ html, body {
 .gh-big {
   font-family: var(--gh-font-num);
   font-variant-numeric: tabular-nums;
-  font-size: 96px;
+  font-size: var(--big-fs);
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.02em;
@@ -241,43 +432,70 @@ html, body {
 }
 .gh-unit {
   font-family: var(--gh-font-cn);
-  font-size: 20px;
+  font-size: var(--unit-fs);
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0.1em;
-  margin-left: 8px;
-  padding-bottom: 14px;
+  margin-left: var(--unit-ml);
+  padding-bottom: var(--unit-pb);
   color: var(--gh-t2);
 }
 .gh-card.is-timer .gh-unit { display: none; }
 /* 计时模式副行不参与排版（规范里 B 模式的坐标表不含副行），状态已并入标签行 */
 .gh-card.is-timer .gh-sub { display: none; }
-.gh-card.is-timer .gh-bigline { top: 100px; height: 100px; }
+.gh-card.is-timer .gh-bigline { top: var(--big-ty); height: var(--big-th); }
 .gh-card.is-timer .gh-big {
-  font-size: 88px;
+  font-size: var(--big-fs-timer);
   letter-spacing: 0.02em;
 }
-/* 计时器的冒号宽度固定 0.32em，避免秒跳抖动 */
+/* HH:MM:SS 八字符形态：迷你档降号，保证单行不溢出 */
+.gh-card.is-timer.is-long .gh-big { font-size: var(--big-fs-timer-long); }
+/* 计时器的冒号宽度固定，避免秒跳抖动 */
 .gh-card.is-timer .gh-big { font-feature-settings: "tnum" 1; }
 
-/* ---------------- 副行：X20 Y214 W380 H22 ---------------- */
+/* ---------------- 副行 ---------------- */
 .gh-sub {
   position: absolute;
-  left: 20px;
-  top: 214px;
-  width: 380px;
-  height: 22px;
-  line-height: 22px;
+  left: var(--big-left);
+  top: var(--sub-y);
+  width: var(--big-w);
+  height: var(--sub-h);
+  line-height: var(--sub-h);
   text-align: center;
   font-family: var(--gh-font-cn);
-  font-size: 15px;
-  font-weight: 400;
-  letter-spacing: 0.08em;
+  font-size: var(--sub-fs);
+  font-weight: var(--sub-fw);
+  letter-spacing: var(--sub-ls);
   color: var(--gh-t2);
   white-space: nowrap;
   transition: color 220ms ease;
 }
 .gh-sub b { font-weight: 500; }
+
+/* ---------------- 备注行（迷你档隐藏） ---------------- */
+.gh-note {
+  position: absolute;
+  left: var(--big-left);
+  top: var(--note-y);
+  width: var(--big-w);
+  height: var(--note-h);
+  line-height: var(--note-h);
+  padding: 0 var(--note-pad);
+  text-align: center;
+  font-family: var(--gh-font-cn);
+  font-size: var(--note-fs);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: rgba(236, 232, 224, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gh-note.is-hidden { display: none; }
+/* 迷你档整体隐藏备注；B 模式也不显示（按钮占位会贴死）；空备注同样不占位 */
+.gh-card .gh-note { display: var(--note-display); }
+.gh-card.is-timer .gh-note,
+.gh-card .gh-note.is-hidden { display: none; }
 
 /* ---------------- 计时器操作按钮 ---------------- */
 .gh-actions { display: contents; }
@@ -292,12 +510,12 @@ html, body {
 }
 .gh-btn--primary {
   position: absolute;
-  left: 150px;
-  top: 208px;
-  width: 120px;
-  height: 38px;
-  border-radius: 19px;
-  font-size: 14px;
+  left: var(--pbtn-left);
+  top: var(--pbtn-y);
+  width: var(--pbtn-w);
+  height: var(--pbtn-h);
+  border-radius: calc(var(--pbtn-h) / 2);
+  font-size: var(--pbtn-fs);
   font-weight: 600;
   letter-spacing: 0.08em;
   color: #201604;
@@ -311,12 +529,12 @@ html, body {
 
 .gh-btn--ghost {
   position: absolute;
-  left: 312px;
-  top: 212px;
-  width: 68px;
-  height: 30px;
-  border-radius: 15px;
-  font-size: 12px;
+  left: var(--gbtn-left);
+  top: var(--gbtn-y);
+  width: var(--gbtn-w);
+  height: var(--gbtn-h);
+  border-radius: calc(var(--gbtn-h) / 2);
+  font-size: var(--gbtn-fs);
   font-weight: 500;
   letter-spacing: 0.06em;
   color: rgba(236, 232, 224, 0.74);
@@ -339,10 +557,37 @@ html, body {
 }
 
 /* ============================================================
+   小尺寸字面修正（≤80% 档）：中文细体小字会散架 —— 字重 500 + 收紧字距
+   （100% 档一律不动）
+   ============================================================ */
+html:not([data-scale='1']) .gh-label,
+html:not([data-scale='1']) .gh-sub,
+html:not([data-scale='1']) .gh-note,
+html:not([data-scale='1']) .gh-seg__btn,
+html:not([data-scale='1']) .gh-btn {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+html:not([data-scale='1']) .gh-label { text-indent: 0.02em; }
+
+/* 迷你/小档的命中区下限 24×24（视觉盒可以更小，热区用透明扩展补足） */
+html:not([data-scale='1']) .gh-pin::after,
+html:not([data-scale='1']) .gh-gear::after,
+html:not([data-scale='1']) .gh-entrynav__btn::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(24px, 100%);
+  height: max(24px, 100%);
+  transform: translate(-50%, -50%);
+}
+
+/* ============================================================
    状态
    ============================================================ */
 
-/* 悬停：blur 28→32；亮度 +4%；描边 .14→.20；阴影加深；上移 2px */
+/* 悬停：blur 28→32；描边 .14→.20；阴影加深；上移 2px */
 .gh-card:hover {
   backdrop-filter: blur(32px) saturate(144%);
   -webkit-backdrop-filter: blur(32px) saturate(144%);
@@ -355,7 +600,7 @@ html, body {
     inset 0 0 0 2px rgba(255, 255, 255, 0.06);
 }
 
-/* 紧迫（剩余 <7 天）：辉光 + 字重 + 标签前金点 + 秒段转金 */
+/* 紧迫（剩余 <7 天）：辉光 + 字重 + 标签前金点（尺寸用 em，随档位缩） */
 .gh-card.is-urgent .gh-big {
   text-shadow: 0 0 28px rgba(201, 164, 91, 0.35);
   font-weight: 650;
@@ -363,9 +608,9 @@ html, body {
 .gh-card.is-urgent .gh-label::before {
   content: "";
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 9px;
+  width: 0.46em;
+  height: 0.46em;
+  margin-right: 0.7em;
   border-radius: 50%;
   vertical-align: middle;
   background: var(--gh-gold);
@@ -392,7 +637,7 @@ html, body {
 }
 .gh-card.is-done .gh-sheen {
   animation: none;
-  transform: translateX(60px) skewX(-18deg);
+  transform: translateX(14%) skewX(-18deg);
   opacity: 0.1;
 }
 @keyframes gh-done-breath {
@@ -406,173 +651,14 @@ html, body {
 .gh-card.is-paused .gh-big { opacity: 0.55; }
 .gh-card.is-paused .gh-sheen,
 .gh-card.is-paused .gh-noise { animation: none; }
-.gh-card.is-paused .gh-sheen { opacity: 0.05; transform: translateX(-140px) skewX(-18deg); }
+.gh-card.is-paused .gh-sheen { opacity: 0.05; transform: translateX(-64%) skewX(-18deg); }
 
 /* 数字跳变入场（widget.js 在数值变化时挂 .is-tick） */
 @keyframes gh-tick {
-  from { transform: translateY(10px); opacity: 0; }
+  from { transform: translateY(0.1em); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
 }
 .gh-big.is-tick { animation: gh-tick 260ms cubic-bezier(0.16, 1, 0.3, 1) 1 both; }
-
-@media (prefers-reduced-motion: reduce) {
-  .gh-sheen { animation: none; opacity: 0.06; }
-  .gh-card, .gh-big, .gh-seg__thumb { transition: none; }
-}
-
-
-/* ============================================================
-   v1.1 增量：多条目切换控件 + 备注行
-   依据《UI 设计规范 · 增量 v1.1》
-   ============================================================ */
-
-/* 多条目切换控件：T2 胶囊，只有 ≥2 条时才渲染。
-   右侧工具组占 328→392（图钉 + 齿轮），所以空档变成 124→328，中点 226。
-   胶囊横向自居中，条目数变多时自动加宽而不是缩字号。 */
-.gh-entrynav {
-  position: absolute;
-  left: 226px;
-  top: 28px;
-  transform: translateX(-50%);
-  min-width: 96px;
-  height: 28px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-.gh-entrynav.is-hidden { display: none; }
-
-.gh-entrynav__btn {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border: 0;
-  padding: 0;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  cursor: pointer;
-  color: rgba(236, 232, 224, 0.55);
-  transition: color 160ms ease, background 160ms ease;
-}
-.gh-entrynav__btn:hover:not(:disabled) {
-  color: rgba(236, 232, 224, 0.92);
-  background: rgba(255, 255, 255, 0.08);
-}
-.gh-entrynav__btn:active:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
-/* 首尾不循环：到头就禁用（.20，无 hover），滚动方向永远可预期 */
-.gh-entrynav__btn:disabled {
-  color: rgba(236, 232, 224, 0.2);
-  background: transparent;
-  cursor: default;
-}
-.gh-entrynav__btn svg { display: block; }
-
-.gh-entrynav__count {
-  min-width: 40px;
-  padding: 0;
-  text-align: center;
-  white-space: nowrap;
-  font-family: var(--gh-font-num);
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  color: rgba(236, 232, 224, 0.92);
-}
-.gh-entrynav__count b { font-weight: 600; }
-.gh-entrynav__count em,
-.gh-entrynav__count i {
-  font-style: normal;
-  font-weight: 400;
-  color: rgba(236, 232, 224, 0.34);
-}
-.gh-entrynav__count i { margin: 0 3px; }
-
-/* 备注行：X20 Y240 W380 H20；空则不渲染，其它元素零位移 */
-.gh-note {
-  position: absolute;
-  left: 20px;
-  top: 240px;
-  width: 380px;
-  height: 20px;
-  line-height: 20px;
-  padding: 0 20px; /* 本体只占 340px，左右各留 20px 呼吸 */
-  text-align: center;
-  font-family: var(--gh-font-cn);
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  color: rgba(236, 232, 224, 0.55);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gh-note.is-hidden { display: none; }
-/* B 模式不显示备注（按钮占 Y208-246，会贴死）*/
-.gh-card.is-timer .gh-note { display: none; }
-
-/* 切换条目时只让内容做 120ms crossfade，控件一律不动 */
-.gh-swap { animation: gh-swap 120ms ease both; }
-@keyframes gh-swap {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-
-/* ============================================================
-   v1.2 增量：固定（锁定位置）按钮
-   依据《UI 设计规范 · 增量 v1.2》
-   ============================================================ */
-
-/* 图钉按钮 X328 Y28 W28 H28 r14；与齿轮间距 8，右侧工具组 328→392 */
-.gh-pin {
-  position: absolute;
-  left: 328px;
-  top: 28px;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  padding: 0;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  color: rgba(236, 232, 224, 0.34);
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-  transition: color 160ms linear, background 120ms ease-out;
-}
-.gh-pin:hover { color: rgba(236, 232, 224, 0.55); background: rgba(201, 164, 91, 0.08); }
-.gh-pin:active { color: rgba(236, 232, 224, 0.45); background: rgba(201, 164, 91, 0.14); }
-
-/* 图标：未固定＝绕中心旋转 −18°、无基线；已固定＝回正 + 基线出现（钉进桌面） */
-.gh-pin__ico {
-  display: block;
-  transform: rotate(-18deg);
-  transition: transform 240ms cubic-bezier(0.34, 1.3, 0.64, 1);
-}
-.gh-pin:active .gh-pin__ico { transform: rotate(-18deg) scale(0.92); }
-.gh-pin__base { opacity: 0; transition: opacity 240ms ease-out; }
-
-.gh-card.is-locked .gh-pin { color: rgba(201, 164, 91, 0.8); }
-.gh-card.is-locked .gh-pin:hover { color: #ebd9a8; }
-.gh-card.is-locked .gh-pin:active { color: #c9a45b; }
-.gh-card.is-locked .gh-pin__ico { transform: rotate(0deg); }
-.gh-card.is-locked .gh-pin:active .gh-pin__ico { transform: rotate(0deg) scale(0.92); }
-.gh-card.is-locked .gh-pin__base { opacity: 1; }
 
 /* 已固定的卡片：一圈极淡的鎏金内描边 —— 唯一的「远看可辨」信号。
    不加光晕、不改投影、不改模糊档，锁定不该造成视觉跳变。 */
@@ -587,7 +673,25 @@ html, body {
 }
 .gh-card.is-locked:active { cursor: not-allowed; }
 
+/* 切换条目时只让内容做 120ms crossfade，控件一律不动 */
+.gh-swap { animation: gh-swap 120ms ease both; }
+@keyframes gh-swap {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 换档：只做瞬时 bounds 重设 + 卡片淡入，不逐帧 resize 动画 */
+@keyframes gh-scale-in {
+  from { opacity: 0.9; }
+  to { opacity: 1; }
+}
+.gh-card.is-rescale { animation: gh-scale-in 120ms var(--gh-ease-hover) 1 both; }
+
 @media (prefers-reduced-motion: reduce) {
+  .gh-sheen { animation: none; opacity: 0.06; }
+  .gh-card,
+  .gh-big,
+  .gh-seg__thumb,
   .gh-pin__ico,
   .gh-pin__base { transition: none; }
 }

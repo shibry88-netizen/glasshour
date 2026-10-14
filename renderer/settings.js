@@ -171,6 +171,17 @@
     $('opacityVal').textContent = $('opacity').value + '%';
     $('layer').value = state.desktopLayerPref || 'auto';
     $('autostart').checked = !!state.loginItem;
+    const scale = Number(state.uiScale) || 0.5;
+    document.querySelectorAll('#sizeSeg button').forEach((b) => {
+      const on = parseFloat(b.dataset.scale) === scale;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    $('sizeHint').textContent =
+      scale <= 0.65
+        ? '小尺寸：隐藏备注与模式切换；双击卡片或用托盘切换模式。'
+        : '完整版式。调整桌面上卡片的显示尺寸，立即生效并记忆。';
     $('toggleVisible').textContent = state.visible ? '隐藏组件' : '显示组件';
     $('toggleVisible').title = state.visible
       ? '把桌面上的卡片收起来（Ctrl+Alt+G 可恢复）'
@@ -271,6 +282,28 @@
   $('opacity').addEventListener('input', async () => {
     $('opacityVal').textContent = $('opacity').value + '%';
     await gh.setState({ opacity: parseInt($('opacity').value, 10) / 100 });
+  });
+
+  // 组件大小：4 档分段按钮，点击即生效；方向键可切换（role=radiogroup）
+  function currentScale() {
+    return Number(state.uiScale) || 0.5;
+  }
+  async function pickScale(k) {
+    const next = await gh.setScale(k);
+    if (next && next.mode) paint(next);
+    status(`组件大小已切到 ${Math.round(k * 100)}%`);
+  }
+  $('sizeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-scale]');
+    if (b) pickScale(parseFloat(b.dataset.scale));
+  });
+  $('sizeSeg').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const list = [0.5, 0.65, 0.8, 1];
+    const i = list.indexOf(currentScale());
+    const n = Math.min(Math.max(i + (e.key === 'ArrowRight' ? 1 : -1), 0), list.length - 1);
+    e.preventDefault();
+    if (n !== i) pickScale(list[n]);
   });
 
   $('locked').addEventListener('change', async () => {
