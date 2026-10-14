@@ -169,10 +169,17 @@
     $('durSec').value = (state.durationSec || 0) % 60;
     $('opacity').value = Math.round((state.opacity == null ? 1 : state.opacity) * 100);
     $('opacityVal').textContent = $('opacity').value + '%';
-    $('layer').value = state.desktopLayer || 'auto';
+    $('layer').value = state.desktopLayerPref || 'auto';
     $('autostart').checked = !!state.loginItem;
+    $('locked').checked = !!state.locked;
+    $('lockedHint').textContent = state.locked
+      ? '已固定：钉在桌面层，位置锁死（解锁才能拖动）'
+      : '未固定：可拖到任意位置，点图钉即锁在这里';
     $('ver').textContent = 'v' + state.version;
-    $('layerInfo').textContent = state.desktopLayer || '—';
+    const probe = state.desktopLayerProbe;
+    const probeText =
+      probe === 'ok' ? ' · 点击自检通过' : probe && probe !== 'skip' && probe !== 'unknown' ? ` · 自检 ${probe}` : '';
+    $('layerInfo').textContent = (state.desktopLayerLabel || state.desktopLayer || '—') + probeText;
     if (state.userData) userData = state.userData;
   }
 
@@ -260,6 +267,12 @@
   $('opacity').addEventListener('input', async () => {
     $('opacityVal').textContent = $('opacity').value + '%';
     await gh.setState({ opacity: parseInt($('opacity').value, 10) / 100 });
+  });
+
+  $('locked').addEventListener('change', async () => {
+    const on = $('locked').checked;
+    paint(await gh.setState({ locked: on }));
+    status(on ? '已固定到桌面（拖不动了）' : '已解锁（可以拖到任意位置）');
   });
 
   $('layer').addEventListener('change', async () => {

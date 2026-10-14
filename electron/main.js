@@ -10,7 +10,15 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, sh
 const path = require('path');
 const fs = require('fs');
 const Store = require('./store');
-const { pinToDesktop, unpinFromDesktop } = require('./desktop-pin');
+const pin = require('./desktop-pin');
+const {
+  chainFor,
+  nextCandidate,
+  layerLabel,
+  layerDescription,
+  sanitizePref,
+  clampToWorkArea,
+} = require('./layer-policy');
 
 const APP_ID = 'com.shibry88.glasshour';
 const ROOT = path.join(__dirname, '..');
@@ -30,6 +38,7 @@ const store = new Store('config', {
   title: '2027年高考',
   durationSec: 25 * 60,
   desktopLayer: 'auto', // 'auto' | 'workerw' | 'bottom' | 'normal'
+  layerProbe: true, // 钉层前做「鼠标点得到吗」自检，不合格就退下一级
   openAtLogin: false,
   visible: true,
   opacity: 1,
@@ -45,10 +54,17 @@ const store = new Store('config', {
 let widget = null;
 let settingsWin = null;
 let tray = null;
-let layerInfo = { via: 'none' };
-let dragOffset = null;
-let bottomKeeper = null;
 let quitFlag = false;
+
+// 层级状态：layer 是「当前真的在哪一层」，pref 是用户偏好（存在 store 里）
+let layerState = { layer: 'none', via: 'none', probe: 'skip', parentHwnd: 0n };
+let sinkActive = false; // 是否已压在「桌面图标之上、普通窗口之下」
+let layerKeeper = null; // sink 模式的 z 序守卫
+let layerWatchdog = null; // Explorer 重启导致掉层后的重钉守卫
+let dragging = false;
+let dragOffset = null;
+let dragTarget = null;
+let saveTimer = null;
 
 function log(...args) {
   const line = `[${new Date().toISOString()}] ${args.join(' ')}\n`;
@@ -222,18 +238,37 @@ if (!gotTheLock) {
 /* ------------------------------------------------------------------ */
 /* 组件窗口                                                            */
 /* ------------------------------------------------------------------ */
+function workAreas() {
+  try {
+    const list = screen.getAllDisplays();
+    if (list && list.length) return list.map((d) => d.workArea);
+  } catch (_) {
+    /* 老运行时 / 测试替身只有主屏 */
+  }
+  return [screen.getPrimaryDisplay().workArea];
+}
+
 function defaultPosition() {
-  const { workArea } = screen.getPrimaryDisplay();
+  const wa = workAreas()[0];
   return {
-    x: workArea.x + workArea.width - WIN_W - 24,
-    y: workArea.y + workArea.height - WIN_H - 40,
+    x: wa.x + wa.width - WIN_W - 24,
+    y: wa.y + wa.height - WIN_H - 40,
   };
 }
 
 function createWidget() {
   const d = defaultPosition();
-  const x = Number.isFinite(store.get('x')) ? store.get('x') : d.x;
-  const y = Number.isFinite(store.get('y')) ? store.get('y') : d.y;
+  // 恢复上次位置，并保证至少有一部分落在某块屏幕里（换显示器 / 改分辨率后不至于丢到屏幕外）
+  const restored = clampToWorkArea(
+    Number.isFinite(store.get('x')) ? store.get('x') : d.x,
+    Number.isFinite(store.get('y')) ? store.get('y') : d.y,
+    WIN_W,
+    WIN_H,
+    workAreas()
+  );
+  const x = restored.x;
+  const y = restored.y;
+  if (restored.moved) log(`位置兜底：修正到 ${x},${y}`);
 
   widget = new BrowserWindow({
     width: WIN_W,
@@ -268,14 +303,15 @@ function createWidget() {
 
   widget.once('ready-to-show', () => {
     if (store.get('visible')) widget.showInactive();
-    applyDesktopLayer();
+    applyLayer();
   });
 
+  // 位置记忆：拖动中由 drag:end 统一落盘，这里只处理别的位移，并做防抖（别每帧写盘）
   widget.on('moved', () => {
     if (!widget || widget.isDestroyed()) return;
+    if (dragging || store.get('locked')) return;
     const [wx, wy] = widget.getPosition();
-    store.set('x', wx);
-    store.set('y', wy);
+    savePositionSoon({ x: wx, y: wy });
   });
 
   widget.on('close', (e) => {
@@ -293,55 +329,198 @@ function createWidget() {
 }
 
 /* ------------------------------------------------------------------ */
-/* 桌面层策略                                                          */
+/* 桌面层 / 固定                                                       */
 /* ------------------------------------------------------------------ */
-function stopBottomKeeper() {
-  if (bottomKeeper) {
-    clearInterval(bottomKeeper);
-    bottomKeeper = null;
+function savePositionSoon(pos) {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const p = clampToWorkArea(pos.x, pos.y, WIN_W, WIN_H, workAreas());
+    store.patch({ x: Math.round(p.x), y: Math.round(p.y) });
+  }, 400);
+}
+
+function stopLayerKeeper() {
+  if (layerKeeper) {
+    clearInterval(layerKeeper);
+    layerKeeper = null;
   }
 }
 
-/** 回退方案：不可激活 + 不进任务栏 + 常驻 z 序底部 */
-function startBottomKeeper() {
-  stopBottomKeeper();
-  layerInfo = { via: 'bottom' };
-  bottomKeeper = setInterval(() => {
-    if (!widget || widget.isDestroyed()) return;
-    try {
-      widget.setAlwaysOnTop(false);
-    } catch (_) {
-      /* ignore */
+function stopLayerWatchdog() {
+  if (layerWatchdog) {
+    clearInterval(layerWatchdog);
+    layerWatchdog = null;
+  }
+}
+
+/** sink 守卫：一直被别的窗口挤，就再压回去 */
+function startLayerKeeper() {
+  stopLayerKeeper();
+  if (!pin.supported()) return;
+  layerKeeper = setInterval(() => {
+    if (!widget || widget.isDestroyed() || !sinkActive) return;
+    pin.sinkAboveDesktop(widget);
+  }, 2000);
+}
+
+/** 掉层守卫：Explorer 重启会让 WorkerW 句柄作废，这时重走一遍落位流程 */
+function startLayerWatchdog() {
+  stopLayerWatchdog();
+  if (!pin.supported()) return;
+  layerWatchdog = setInterval(() => {
+    if (!widget || widget.isDestroyed() || !store.get('locked')) return;
+    if (layerState.layer !== 'workerw' && layerState.layer !== 'progman') return;
+    const parent = pin.parentOf(widget);
+    if (parent && parent === layerState.parentHwnd) return;
+    log(`watchdog: 桌面层失效（parent=${parent.toString(16)}）→ 重新钉`);
+    applyLayer();
+  }, 4000);
+}
+
+/** 解除钉层 → 普通顶层窗口（位置原地不动） */
+function toTopLevel() {
+  const detached = pin.detachToTopLevel(widget);
+  sinkActive = false;
+  stopLayerKeeper();
+  stopLayerWatchdog();
+  layerState = { layer: 'normal', via: detached ? 'detached' : 'none', probe: 'skip', parentHwnd: 0n };
+  return detached;
+}
+
+/** 压到「桌面图标之上、所有普通窗口之下」：一定可点击，同时被别的窗口盖住 */
+function applySink() {
+  sinkActive =
+    pin.supported() && widget && !widget.isDestroyed() ? !!pin.sinkAboveDesktop(widget) : false;
+  if (sinkActive) startLayerKeeper();
+  else stopLayerKeeper();
+  return sinkActive;
+}
+
+/** 试挂某一级：成功返回 {ok:true, via, parent}，失败返回 {ok:false, reason} */
+function tryLayer(cand) {
+  if (cand === 'workerw' || cand === 'progman') {
+    const r = pin.pinToDesktop(widget, { target: cand });
+    return r.ok ? { ok: true, via: r.via, parent: r.parent } : { ok: false, reason: r.reason };
+  }
+  if (cand === 'sink') {
+    pin.detachToTopLevel(widget);
+    return pin.sinkAboveDesktop(widget) ? { ok: true, via: 'sink' } : { ok: false, reason: 'no-anchor' };
+  }
+  pin.detachToTopLevel(widget); // normal
+  return { ok: true, via: 'normal' };
+}
+
+/**
+ * 落位总闸门：所有层级变化都从这里走。
+ *   locked = true  → 按偏好链钉进桌面层，并锁死位置（每一级都做真机点击自检）
+ *   locked = false → 解绑成普通窗口，可拖到任意地方（仍尽量待在桌面上、可点击）
+ * @param {boolean} [force] 跳过点击自检，强制使用首选层级
+ */
+function applyLayer(force) {
+  if (!widget || widget.isDestroyed()) return layerState;
+  stopLayerKeeper();
+  stopLayerWatchdog();
+  sinkActive = false;
+
+  const locked = !!store.get('locked');
+
+  if (!locked) {
+    toTopLevel();
+    widget.setMovable(true);
+    applySink();
+    log(`layer → normal${sinkActive ? '+sink' : ''}（未固定：可自由拖动）`);
+    refreshTrayMenu();
+    broadcast();
+    return layerState;
+  }
+
+  const pref = sanitizePref(store.get('desktopLayer'));
+  const chain = chainFor(pref);
+  const tried = [];
+  let accepted = null;
+
+  for (let cand = nextCandidate(chain, tried); cand; cand = nextCandidate(chain, tried)) {
+    tried.push(cand);
+    const res = tryLayer(cand);
+    if (!res.ok) {
+      log(`layer ${cand} 挂载失败：${res.reason}`);
+      continue;
     }
-  }, 800);
+    if (cand === 'normal' || force || !store.get('layerProbe')) {
+      accepted = { layer: cand, via: res.via, parent: res.parent, probe: 'skip' };
+      break;
+    }
+    // 真机自检：窗口中心点上鼠标点得到谁？探测本身没做成（非 Windows / 窗口隐藏）按通过处理
+    const p = pin.probeHitTest(widget);
+    if (!p.ok) {
+      accepted = { layer: cand, via: res.via, parent: res.parent, probe: 'unknown:' + p.reason };
+      break;
+    }
+    if (p.ours) {
+      accepted = { layer: cand, via: res.via, parent: res.parent, probe: 'ok' };
+      break;
+    }
+    log(`layer ${cand} 自检未通过：窗口中心点被 ${p.hit} 挡住，鼠标点不到 → 退下一级`);
+    pin.detachToTopLevel(widget);
+  }
+
+  if (!accepted) {
+    // 全都不行 → 至少保证能点、能拖
+    pin.detachToTopLevel(widget);
+    applySink();
+    accepted = { layer: 'normal', via: 'fallback', probe: 'skip' };
+  }
+
+  layerState = {
+    layer: accepted.layer,
+    via: accepted.via,
+    probe: accepted.probe,
+    parentHwnd: accepted.parent ? BigInt('0x' + accepted.parent) : 0n,
+  };
+  widget.setMovable(false);
+  if (accepted.layer === 'sink') startLayerKeeper();
+  if (accepted.layer === 'workerw' || accepted.layer === 'progman') startLayerWatchdog();
+  log(`layer → ${accepted.layer}（${layerLabel(accepted.layer)}）probe=${accepted.probe}`);
+  refreshTrayMenu();
+  broadcast();
+  return layerState;
 }
 
-function applyDesktopLayer() {
-  if (!widget || widget.isDestroyed()) return;
-  const strategy = store.get('desktopLayer');
-  stopBottomKeeper();
-  layerInfo = { via: 'none' };
-
-  if (strategy === 'normal') return;
-
-  if (strategy === 'bottom') {
-    startBottomKeeper();
+/** 逐级自检（托盘菜单里的「桌面层自检」）：把每一级在真机上的结果打给用户看 */
+function diagnoseLayers() {
+  if (!pin.supported()) {
+    dialog.showMessageBox({
+      type: 'info',
+      title: '桌面层自检',
+      message: '当前平台不支持',
+      detail: '桌面层钉死依赖 Windows 的 user32.dll，只在 Windows 上可用。',
+      buttons: ['好'],
+    });
     return;
   }
-
-  if (strategy === 'workerw') {
-    const r = pinToDesktop(widget);
-    layerInfo = r;
-    log('pin(workerw):', JSON.stringify(r));
-    if (!r.ok) startBottomKeeper();
-    return;
+  const keepLocked = !!store.get('locked');
+  store.set('locked', true);
+  const lines = [];
+  for (const cand of ['workerw', 'progman', 'sink', 'normal']) {
+    const res = tryLayer(cand);
+    let verdict = '挂载失败：' + res.reason;
+    if (res.ok) {
+      const p = pin.probeHitTest(widget);
+      if (!p.ok) verdict = '挂载成功（点击自检无法进行：' + p.reason + '）';
+      else verdict = p.ours ? '挂载成功 · 鼠标点得到 ✅' : `挂载成功 · 但鼠标点不到（中心点命中 ${p.hit}）❌`;
+    }
+    lines.push(`${layerLabel(cand)}\n    ${verdict}`);
   }
-
-  // auto：先试真·壁纸层，失败自动回退
-  const r = pinToDesktop(widget);
-  layerInfo = r;
-  log('pin(auto):', JSON.stringify(r));
-  if (!r.ok) startBottomKeeper();
+  store.set('locked', keepLocked);
+  applyLayer();
+  dialog.showMessageBox({
+    type: 'info',
+    title: '桌面层自检',
+    message: `各方案的真机结果（当前生效：${layerLabel(layerState.layer)}）`,
+    detail: lines.join('\n\n'),
+    buttons: ['好'],
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -395,6 +574,7 @@ function showWidget() {
   }
   widget.showInactive();
   store.set('visible', true);
+  applyLayer(); // 重新显示后把层级再捋一遍（隐藏期间可能被人挤过）
 }
 
 function hideWidget() {
@@ -432,11 +612,25 @@ function openSettings() {
 
 function resetPosition() {
   const d = defaultPosition();
-  store.patch({ x: d.x, y: d.y });
-  if (widget && !widget.isDestroyed()) {
-    widget.setPosition(d.x, d.y);
-    if (layerInfo.via === 'workerw') applyDesktopLayer();
+  if (!widget || widget.isDestroyed()) {
+    store.patch({ x: d.x, y: d.y });
+    return;
   }
+  // 先解绑回普通窗口，setPosition 才是「屏幕坐标」语义；固定状态下再照新位置钉回去
+  pin.detachToTopLevel(widget);
+  widget.setPosition(d.x, d.y);
+  store.patch({ x: d.x, y: d.y });
+  applyLayer();
+  log(`resetPosition → ${d.x},${d.y}`);
+}
+
+/** 固定 / 解锁（图钉按钮与托盘共用同一条路径） */
+function toggleLock(next) {
+  const value = typeof next === 'boolean' ? next : !store.get('locked');
+  store.set('locked', value);
+  log(`locked -> ${value}`);
+  applyLayer();
+  return value;
 }
 
 function refreshTrayMenu() {
@@ -446,6 +640,11 @@ function refreshTrayMenu() {
       {
         label: store.get('visible') ? '隐藏组件' : '显示组件',
         click: () => (store.get('visible') ? hideWidget() : showWidget()),
+      },
+      { type: 'separator' },
+      {
+        label: store.get('locked') ? '✅ 已固定（点此解锁，即可拖动）' : '📌 固定到桌面（锁住当前位置）',
+        click: () => toggleLock(),
       },
       { type: 'separator' },
       { label: '本模式：目标日期倒计时', type: 'radio', checked: mode === 'date', click: () => setMode('date') },
@@ -461,12 +660,16 @@ function refreshTrayMenu() {
       {
         label: '桌面层',
         submenu: [
-          { label: '自动（推荐）', type: 'radio', checked: store.get('desktopLayer') === 'auto', click: () => { store.set('desktopLayer', 'auto'); applyDesktopLayer(); refreshTrayMenu(); } },
-          { label: '强制钉在壁纸层 (WorkerW)', type: 'radio', checked: store.get('desktopLayer') === 'workerw', click: () => { store.set('desktopLayer', 'workerw'); applyDesktopLayer(); refreshTrayMenu(); } },
-          { label: '兼容模式（不可激活底层窗口）', type: 'radio', checked: store.get('desktopLayer') === 'bottom', click: () => { store.set('desktopLayer', 'bottom'); applyDesktopLayer(); refreshTrayMenu(); } },
-          { label: '普通窗口', type: 'radio', checked: store.get('desktopLayer') === 'normal', click: () => { store.set('desktopLayer', 'normal'); applyDesktopLayer(); refreshTrayMenu(); } },
+          { label: '自动（推荐：逐级自检回退）', type: 'radio', checked: store.get('desktopLayer') === 'auto', click: () => { store.set('desktopLayer', 'auto'); applyLayer(); refreshTrayMenu(); } },
+          { label: '强制壁纸层 WorkerW（跳过自检）', type: 'radio', checked: store.get('desktopLayer') === 'workerw', click: () => { store.set('desktopLayer', 'workerw'); applyLayer(true); refreshTrayMenu(); } },
+          { label: '兼容模式（桌面之上 · 必定可点击）', type: 'radio', checked: store.get('desktopLayer') === 'bottom', click: () => { store.set('desktopLayer', 'bottom'); applyLayer(); refreshTrayMenu(); } },
+          { label: '普通窗口（不钉层）', type: 'radio', checked: store.get('desktopLayer') === 'normal', click: () => { store.set('desktopLayer', 'normal'); applyLayer(); refreshTrayMenu(); } },
+          { type: 'separator' },
+          { label: '钉层前做点击自检', type: 'checkbox', checked: !!store.get('layerProbe'), click: (item) => { store.set('layerProbe', !!item.checked); applyLayer(); refreshTrayMenu(); } },
+          { label: '立即重钉一次', click: () => applyLayer() },
         ],
       },
+      { label: '桌面层自检…', click: diagnoseLayers },
       { label: '重置窗口位置', click: resetPosition },
       { type: 'separator' },
       {
@@ -478,7 +681,9 @@ function refreshTrayMenu() {
             message: 'GlassHour · 琉璃沙漏',
             detail:
               `版本 ${app.getVersion()}\n液态玻璃桌面倒计时组件 for Windows 10\n\n` +
-              `桌面层：${layerInfo.via}${layerInfo.reason ? ' (' + layerInfo.reason + ')' : ''}\n` +
+              `位置：${store.get('locked') ? '已固定（不可拖动）' : '未固定（可拖动）'}\n` +
+              `当前层级：${layerLabel(layerState.layer)}（偏好：${sanitizePref(store.get('desktopLayer'))}）\n` +
+              `点击自检：${layerState.probe === 'ok' ? '通过' : layerState.probe}\n` +
               `配置文件：${store.file}\n\nMIT License`,
             buttons: ['好'],
           }),
@@ -486,7 +691,7 @@ function refreshTrayMenu() {
       { label: '退出', click: () => { quitFlag = true; app.quit(); } },
   ];
   const em = entryMenu();
-  if (em) items.splice(2, 0, em);
+  if (em) items.splice(5, 0, em);
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
@@ -521,7 +726,13 @@ function publicState() {
     timerRunning: !!store.get('timerRunning'),
     timerEndsAt: store.get('timerEndsAt') || 0,
     timerRemaining: store.get('timerRemaining'),
-    desktopLayer: layerInfo.via,
+    // desktopLayer = 当前真正生效的层级；desktopLayerPref = 用户偏好（设置页那一栏绑这个）
+    desktopLayer: layerState.layer,
+    desktopLayerLabel: layerLabel(layerState.layer),
+    desktopLayerDesc: layerDescription(layerState.layer),
+    desktopLayerPref: sanitizePref(store.get('desktopLayer')),
+    desktopLayerProbe: layerState.probe || 'skip',
+    layerProbeEnabled: !!store.get('layerProbe'),
     locked: !!store.get('locked'),
     version: app.getVersion(),
     loginItem: currentAutoStart(),
@@ -539,7 +750,7 @@ function broadcast() {
 function registerIpc() {
   ipcMain.handle('state:get', () => publicState());
   ipcMain.handle('state:set', (_e, patch) => {
-    const allowed = ['mode', 'durationSec', 'opacity', 'desktopLayer', 'locked',
+    const allowed = ['mode', 'durationSec', 'opacity', 'desktopLayer', 'locked', 'layerProbe',
       'timerRunning', 'timerEndsAt', 'timerRemaining'];
     const clean = {};
     for (const k of Object.keys(patch || {})) if (allowed.includes(k)) clean[k] = patch[k];
@@ -548,10 +759,10 @@ function registerIpc() {
       if (patch && k in patch) entryPatch[k] = patch[k];
     }
     store.patch(clean);
-    if ('locked' in clean) log(`locked -> ${clean.locked}`);
     if (Object.keys(entryPatch).length) updateEntry(store.get('activeId'), entryPatch, false);
     else log(`state:set ${JSON.stringify(clean)}`);
-    if ('desktopLayer' in clean) applyDesktopLayer();
+    // 固定状态 / 桌面层偏好 / 自检开关，任何一项变了都要重新落位
+    if ('locked' in clean || 'desktopLayer' in clean || 'layerProbe' in clean) applyLayer();
     refreshTrayMenu();
     broadcast();
     return publicState();
@@ -597,24 +808,57 @@ function registerIpc() {
     return { openAtLogin: currentAutoStart(), userData: app.getPath('userData') };
   });
 
-  // 手动拖动（不依赖 -webkit-app-region，WorkerW 子窗口下更可靠）
+  /*
+   * 手动拖动（不依赖 -webkit-app-region）。
+   * 渲染层那一句 `if (state.locked) return` 只是提前省事，主进程这里的 store 判断才是权威闸门：
+   * 就算渲染层状态过期，固定状态下也一律不放行。
+   */
   ipcMain.on('drag:start', () => {
     if (!widget || widget.isDestroyed()) return;
+    if (store.get('locked')) {
+      log('drag:start 被拒：已固定（先点图钉解锁）');
+      return;
+    }
+    dragging = true;
+    // 拖之前先脱离桌面层：这样 getPosition/setPosition 就是普通屏幕坐标，任何显示器布局都不会错位
+    pin.detachToTopLevel(widget);
+    sinkActive = false;
+    stopLayerKeeper();
     const pt = screen.getCursorScreenPoint();
     const [wx, wy] = widget.getPosition();
     dragOffset = { dx: pt.x - wx, dy: pt.y - wy };
-  });
-  ipcMain.on('drag:move', () => {
-    if (!dragOffset || !widget || widget.isDestroyed()) return;
-    const pt = screen.getCursorScreenPoint();
-    widget.setPosition(Math.round(pt.x - dragOffset.dx), Math.round(pt.y - dragOffset.dy));
-  });
-  ipcMain.on('drag:end', () => {
-    dragOffset = null;
-    if (widget && !widget.isDestroyed()) {
-      const [wx, wy] = widget.getPosition();
-      store.patch({ x: wx, y: wy });
+    dragTarget = { x: wx, y: wy };
+    // 拖动期间浮到最上层，否则会被别的窗口盖住（看不见自己在拖什么）
+    try {
+      widget.setAlwaysOnTop(true, 'screen-saver');
+    } catch (_) {
+      /* ignore */
     }
+    log(`drag:start ${wx},${wy}`);
+  });
+
+  ipcMain.on('drag:move', () => {
+    if (!dragging || !dragOffset || !widget || widget.isDestroyed()) return;
+    if (store.get('locked')) return;
+    const pt = screen.getCursorScreenPoint();
+    dragTarget = { x: Math.round(pt.x - dragOffset.dx), y: Math.round(pt.y - dragOffset.dy) };
+    widget.setPosition(dragTarget.x, dragTarget.y);
+  });
+
+  ipcMain.on('drag:end', () => {
+    if (!dragging) return;
+    dragging = false;
+    dragOffset = null;
+    if (!widget || widget.isDestroyed()) return;
+    if (dragTarget) savePositionSoon(dragTarget);
+    try {
+      widget.setAlwaysOnTop(false);
+    } catch (_) {
+      /* ignore */
+    }
+    // 松手后按当前固定状态重新落位：锁着 → 钉回桌面层；没锁 → 沉回「桌面之上」，但位置是新的
+    applyLayer();
+    log(`drag:end ${JSON.stringify(dragTarget)}`);
   });
 }
 
@@ -641,6 +885,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   quitFlag = true;
-  stopBottomKeeper();
-  if (widget && !widget.isDestroyed()) unpinFromDesktop(widget);
+  stopLayerKeeper();
+  stopLayerWatchdog();
+  if (saveTimer) clearTimeout(saveTimer);
+  if (widget && !widget.isDestroyed()) pin.detachToTopLevel(widget);
 });

@@ -331,26 +331,44 @@
         bridge.hide();
       });
 
-    // 拖动：整卡可拖，交互控件除外
+    // 拖动：整卡可拖，交互控件除外。锁定态由主进程权威拦截（这里是第一道、省个来回）
     const drag = q('drag') || q('card');
     if (drag) {
       const NO_DRAG =
         '[data-gh="mode-btn"],[data-gh="timer-toggle"],[data-gh="timer-reset"],[data-gh="settings"],[data-gh="close"],[data-gh="entry-prev"],[data-gh="entry-next"],[data-gh="lock"]';
-      drag.addEventListener('mousedown', (e) => {
+      let activeId = null;
+      const onUp = () => {
+        if (activeId == null) return;
+        const id = activeId;
+        activeId = null;
+        bridge.dragEnd();
+        try {
+          drag.releasePointerCapture(id);
+        } catch (_) {
+          /* ignore */
+        }
+      };
+      drag.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
         if (e.target.closest(NO_DRAG)) return;
         if (state && state.locked) return; // 已固定：拖不动
+        activeId = e.pointerId;
+        // 用 pointer capture：甩得快、指针跑到窗口外也不会丢掉 mouseup，拖动不会「断」
+        try {
+          drag.setPointerCapture(e.pointerId);
+        } catch (_) {
+          /* ignore */
+        }
         bridge.dragStart();
-        const move = () => bridge.dragMove();
-        const up = () => {
-          bridge.dragEnd();
-          window.removeEventListener('mousemove', move);
-          window.removeEventListener('mouseup', up);
-        };
-        window.addEventListener('mousemove', move);
-        window.addEventListener('mouseup', up);
         e.preventDefault();
       });
+      drag.addEventListener('pointermove', () => {
+        if (activeId == null) return;
+        bridge.dragMove();
+      });
+      drag.addEventListener('pointerup', onUp);
+      drag.addEventListener('pointercancel', onUp);
+      drag.addEventListener('lostpointercapture', onUp);
     }
   }
 

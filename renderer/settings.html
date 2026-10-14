@@ -248,17 +248,23 @@
       <span class="kv" id="opacityVal">100%</span>
     </div>
     <div class="row">
+      <label>固定状态</label>
+      <div class="grow">
+        <input type="checkbox" id="locked" /> <span class="kv" id="lockedHint">固定到桌面并锁住位置（组件上那颗图钉同款开关）</span>
+      </div>
+    </div>
+    <div class="row">
       <label>桌面层策略</label>
       <div class="grow">
         <select id="layer">
-          <option value="auto">自动（推荐：先试壁纸层，失败自动回退）</option>
-          <option value="workerw">强制钉在壁纸层（WorkerW）</option>
-          <option value="bottom">兼容模式（不可激活的底层窗口）</option>
-          <option value="normal">普通窗口</option>
+          <option value="auto">自动（推荐：逐级自检，点不到就回退）</option>
+          <option value="workerw">强制壁纸层 WorkerW（跳过自检）</option>
+          <option value="bottom">兼容模式（桌面之上 · 必定可点击）</option>
+          <option value="normal">普通窗口（不钉层）</option>
         </select>
       </div>
     </div>
-    <div class="hint">若壁纸层钉不上、或组件被桌面图标挡住，把这里改成「兼容模式」。</div>
+    <div class="hint">「固定」= 钉进桌面层 + 位置锁死、拖不动；解锁后可以拖到任意地方，再点固定就锁在新位置。若壁纸层钉不上 / 组件被桌面图标挡住，把桌面层策略改成「兼容模式」。</div>
     <div class="row">
       <label>开机自启</label>
       <div class="grow"><input type="checkbox" id="autostart" /> <span class="kv">随 Windows 启动（写入注册表 Run 项）</span></div>
@@ -272,7 +278,7 @@
   <div class="group">
     <div class="gtitle">关于</div>
     <div class="row"><label>版本</label><div class="grow kv" id="ver">—</div></div>
-    <div class="row"><label>桌面层</label><div class="grow kv" id="layerInfo">—</div></div>
+    <div class="row"><label>当前层级</label><div class="grow kv" id="layerInfo">—</div></div>
     <div class="row"><label>配置文件</label><div class="grow kv"><button class="btn" id="openCfg">打开配置目录</button></div></div>
   </div>
 

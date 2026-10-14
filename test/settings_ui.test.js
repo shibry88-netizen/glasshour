@@ -31,7 +31,12 @@ function makeState() {
     durationSec: 1500,
     opacity: 1,
     visible: true,
-    desktopLayer: 'auto',
+    desktopLayer: 'sink', // 当前真实生效的层级
+    desktopLayerLabel: '桌面之上 · 普通窗口之下（兼容模式，可点击）',
+    desktopLayerPref: 'auto', // 用户偏好（下拉框绑这个）
+    desktopLayerProbe: 'ok',
+    layerProbeEnabled: true,
+    locked: false,
     version: '1.1.0',
     loginItem: false,
     userData: '/tmp/fake',
@@ -176,6 +181,37 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
   ok(!calls().some((c) => c.fn === 'addEntry'), '没日期时不会乱建条目');
   ok(d.getElementById('status').textContent.includes('日期'), `有提示文案：「${d.getElementById('status').textContent}」`);
   ok(!d.getElementById('entryForm').classList.contains('is-hidden'), '表单保持展开（数据没丢）');
+
+
+  console.log('\n===== 7. 桌面层下拉框显示的是「偏好」，不是「当前生效层级」=====');
+  ok(
+    d.getElementById('layer').value === 'auto',
+    `偏好 auto 时显示 auto（旧实现会串成生效层级，导致「自动」永远选不上）→ ${d.getElementById('layer').value}`
+  );
+  ok(
+    /兼容模式/.test(d.getElementById('layerInfo').textContent),
+    `关于栏显示真实生效层级：${d.getElementById('layerInfo').textContent}`
+  );
+  ok(/点击自检通过/.test(d.getElementById('layerInfo').textContent), '并显示点击自检结论');
+  calls().length = 0;
+  d.getElementById('layer').value = 'bottom';
+  d.getElementById('layer').dispatchEvent(new w.Event('change', { bubbles: true }));
+  await tick();
+  await tick();
+  const layerCall = calls().find((c) => c.fn === 'setState' && c.args[0].desktopLayer);
+  ok(!!layerCall && layerCall.args[0].desktopLayer === 'bottom', '切换桌面层会发 setState({desktopLayer})');
+
+  console.log('\n===== 8. 「固定状态」勾选框 = 组件上那颗图钉 =====');
+  ok(d.getElementById('locked').checked === false, '未固定时复选框是空的');
+  calls().length = 0;
+  d.getElementById('locked').checked = true;
+  d.getElementById('locked').dispatchEvent(new w.Event('change', { bubbles: true }));
+  await tick();
+  await tick();
+  const lockCall = calls().find((c) => c.fn === 'setState' && 'locked' in c.args[0]);
+  ok(!!lockCall && lockCall.args[0].locked === true, '勾上就发 setState({locked:true}) → 主进程去钉桌面层');
+  ok(/已固定/.test(d.getElementById('lockedHint').textContent), `提示文案跟着变：${d.getElementById('lockedHint').textContent}`);
+
 
   console.log(`\n===== 测试结束：${fails === 0 ? '全部通过 ✅' : fails + ' 处失败 ❌'} =====`);
   process.exit(fails === 0 ? 0 : 1);

@@ -2,11 +2,19 @@
 /**
  * GlassHour · 主进程逻辑集成测试（不依赖 electron 运行时、不需要 Xvfb）
  *
- * 做法：伪造 electron 模块 → require 真实 main.js → 直接调用它注册的 ipcMain handler，
- * 断言 publicState() 与落盘 config.json 的内容。用来抓「改了日期但存不下来」这类问题。
+ * 做法：伪造 electron 模块 + 伪造 koffi（内含一个迷你 Win32 窗口世界）
+ *      → require 真实 main.js → 直接调用它注册的 ipcMain handler，
+ *      断言 publicState() 与落盘 config.json 的内容。
+ *
+ * 覆盖两件事：
+ *   1) 条目增删改查 / 旧配置迁移 / 落盘（抓「改了日期但存不下来」这类问题）
+ *   2) 「固定 / 解锁 / 再固定」这条桌面层链路（抓「图钉是假的」「解锁拖不动」这类问题）
  *
  * 用法： node test/main_logic.test.js
+ *      （脚本会自己打开 GLASSHOUR_FORCE_WIN32，不需要真的 Windows）
  */
+process.env.GLASSHOUR_FORCE_WIN32 = '1';
+
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -18,10 +26,123 @@ fs.writeFileSync(
   path.join(USER_DATA, 'config.json'),
   JSON.stringify({ mode: 'date', targetISO: '2027-01-01T00:00:00', title: '元旦', durationSec: 1500, opacity: 1 }, null, 2)
 );
+
+/* ------------------------------------------------------------------ */
+/* 迷你 Win32 窗口世界：让 desktop-pin.js 的 FFI 逻辑真的跑起来          */
+/* ------------------------------------------------------------------ */
+const HWND = { desktop: 0x1, progman: 0x100, icon: 0x200, defview: 0x210, wallpaper: 0x300, widget: 0x400 };
+const world = {
+  parent: new Map(), // hwnd -> 父 hwnd
+  rect: new Map(), // hwnd -> {left,top,right,bottom}（物理像素）
+  hit: 'auto', // 'auto' 按父子关系推断鼠标点得到谁；也可以指定具体句柄
+  calls: { setParent: [], setWindowPos: [] },
+  topLevel: [HWND.icon, HWND.wallpaper, HWND.progman], // z 序：从顶到底
+};
+world.parent.set(HWND.icon, HWND.desktop);
+world.parent.set(HWND.wallpaper, HWND.desktop);
+world.parent.set(HWND.progman, HWND.desktop);
+world.rect.set(HWND.widget, { left: 1436, top: 720, right: 1896, bottom: 1040 });
+
+const n = (v) => (typeof v === 'bigint' ? Number(v) : Number(v || 0));
+const known = () => [HWND.desktop, HWND.progman, HWND.icon, HWND.defview, HWND.wallpaper, HWND.widget];
+
+function api(name, args) {
+  switch (name) {
+    case 'FindWindowW':
+      return args[0] === 'Progman' ? HWND.progman : 0;
+    case 'GetDesktopWindow':
+      return HWND.desktop;
+    case 'GetWindow': {
+      const h = n(args[0]);
+      const cmd = n(args[1]);
+      if (cmd === 5) return h === HWND.desktop ? world.topLevel[0] : 0; // GW_CHILD = 最顶
+      if (cmd === 2) {
+        const i = world.topLevel.indexOf(h); // GW_HWNDNEXT = 往下
+        return i >= 0 && i + 1 < world.topLevel.length ? world.topLevel[i + 1] : 0;
+      }
+      return 0;
+    }
+    case 'FindWindowExW': {
+      const parent = n(args[0]);
+      const after = n(args[1]);
+      if (args[2] === 'SHELLDLL_DefView') return parent === HWND.icon ? HWND.defview : 0;
+      if (args[2] === 'WorkerW') return parent === 0 && after === HWND.icon ? HWND.wallpaper : 0;
+      return 0;
+    }
+    case 'SendMessageTimeoutW':
+      return 1;
+    case 'SetParent': {
+      const child = n(args[0]);
+      const parent = n(args[1]);
+      const prev = world.parent.get(child) || 0;
+      world.calls.setParent.push({ child, parent });
+      if (parent) world.parent.set(child, parent);
+      else world.parent.delete(child);
+      return prev;
+    }
+    case 'GetParent':
+      return world.parent.get(n(args[0])) || 0;
+    case 'IsWindow':
+      return n(args[0]) && known().includes(n(args[0])) ? 1 : 0;
+    case 'IsChild':
+      return 0;
+    case 'GetWindowRect': {
+      const rc = world.rect.get(n(args[0]));
+      const out = args[1];
+      if (!rc || !out || typeof out !== 'object') return 0;
+      out.left = rc.left;
+      out.top = rc.top;
+      out.right = rc.right;
+      out.bottom = rc.bottom;
+      return 1;
+    }
+    case 'WindowFromPoint': {
+      if (world.hit !== 'auto') return world.hit;
+      // 真实世界的坑：挂在壁纸层时，鼠标点上去命中的是桌面图标层，不是我们的窗口
+      const p = world.parent.get(HWND.widget) || 0;
+      return p === HWND.wallpaper || p === HWND.progman ? HWND.icon : HWND.widget;
+    }
+    case 'SetWindowPos': {
+      const hwnd = n(args[0]);
+      const after = n(args[1]);
+      const flags = n(args[6]);
+      const SWP_NOMOVE = 0x0002;
+      const SWP_NOSIZE = 0x0001;
+      if (!(flags & SWP_NOMOVE) && !(flags & SWP_NOSIZE)) {
+        world.rect.set(hwnd, {
+          left: n(args[2]),
+          top: n(args[3]),
+          right: n(args[2]) + n(args[4]),
+          bottom: n(args[3]) + n(args[5]),
+        });
+      }
+      world.calls.setWindowPos.push({ hwnd, after, x: n(args[2]), y: n(args[3]), flags });
+      return 1;
+    }
+    default:
+      return 0;
+  }
+}
+
+/** 伪 koffi：func(签名) → 用签名里的函数名分发到迷你世界 */
+const fakeKoffi = {
+  load: () => ({
+    func: (sig) => {
+      const name = (/__stdcall\s+[\w*\s]+?\s+(\w+)\s*\(/.exec(sig) || [, 'unknown'])[1];
+      return (...args) => api(name, args);
+    },
+  }),
+  struct: (name, fields) => ({ name, fields }),
+};
+
+/* ------------------------------------------------------------------ */
+/* 伪 electron                                                         */
+/* ------------------------------------------------------------------ */
 const handlers = new Map();
 const sent = [];
 const windows = [];
 const menus = [];
+const cursor = { x: 0, y: 0 };
 
 class FakeWebContents {
   send(ch, payload) {
@@ -33,21 +154,80 @@ class FakeBrowserWindow {
     this.opts = opts || {};
     this.webContents = new FakeWebContents();
     this._destroyed = false;
+    this._pos = { x: this.opts.x || 0, y: this.opts.y || 0 };
+    this._size = { width: this.opts.width || 460, height: this.opts.height || 320 };
+    this._visible = true;
+    this.movable = null;
+    this.alwaysOnTop = null;
     windows.push(this);
+    world.rect.set(HWND.widget, {
+      left: this._pos.x,
+      top: this._pos.y,
+      right: this._pos.x + this._size.width,
+      bottom: this._pos.y + this._size.height,
+    });
   }
   loadFile() {}
   loadURL() {}
-  once() {}
+  once(ev, cb) {
+    // 真实 Electron 里 ready-to-show 之后主进程会做第一次落位，测试里也让它发生
+    if (ev === 'ready-to-show') setTimeout(() => cb && cb(), 0);
+  }
   on() {}
-  showInactive() { this._shown = true; }
-  hide() {}
-  show() {}
+  showInactive() {
+    this._shown = true;
+    this._visible = true;
+  }
+  show() {
+    this._visible = true;
+  }
+  hide() {
+    this._visible = false;
+  }
   focus() {}
-  isDestroyed() { return this._destroyed; }
-  getPosition() { return [0, 0]; }
-  setPosition() {}
-  getSize() { return [460, 320]; }
-  setAlwaysOnTop() {}
+  isDestroyed() {
+    return this._destroyed;
+  }
+  isVisible() {
+    return this._visible;
+  }
+  getNativeWindowHandle() {
+    const b = Buffer.alloc(8);
+    b.writeBigUInt64LE(BigInt(HWND.widget));
+    return b;
+  }
+  getPosition() {
+    return [this._pos.x, this._pos.y];
+  }
+  setPosition(x, y) {
+    const rc = world.rect.get(HWND.widget) || {
+      left: 0,
+      top: 0,
+      right: this._size.width,
+      bottom: this._size.height,
+    };
+    const w = rc.right - rc.left || this._size.width;
+    const h = rc.bottom - rc.top || this._size.height;
+    this._pos = { x: Math.round(x), y: Math.round(y) };
+    world.rect.set(HWND.widget, {
+      left: this._pos.x,
+      top: this._pos.y,
+      right: this._pos.x + w,
+      bottom: this._pos.y + h,
+    });
+  }
+  getSize() {
+    return [this._size.width, this._size.height];
+  }
+  getBounds() {
+    return { x: this._pos.x, y: this._pos.y, width: this._size.width, height: this._size.height };
+  }
+  setMovable(v) {
+    this.movable = v;
+  }
+  setAlwaysOnTop(v) {
+    this.alwaysOnTop = v;
+  }
   setMenuBarVisibility() {}
 }
 
@@ -65,7 +245,9 @@ const fakeElectron = {
   },
   BrowserWindow: FakeBrowserWindow,
   Tray: class {
-    setContextMenu(m) { menus.push(m); }
+    setContextMenu(m) {
+      menus.push(m);
+    }
     setToolTip() {}
     on() {}
   },
@@ -75,8 +257,9 @@ const fakeElectron = {
     on: (ch, fn) => handlers.set('on:' + ch, fn),
   },
   screen: {
-    getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
-    getCursorScreenPoint: () => ({ x: 0, y: 0 }),
+    getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }),
+    getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }],
+    getCursorScreenPoint: () => ({ x: cursor.x, y: cursor.y }),
   },
   nativeImage: {
     createFromPath: () => ({ isEmpty: () => true, resize: () => ({}) }),
@@ -89,7 +272,7 @@ const fakeElectron = {
 const origLoad = Module._load;
 Module._load = function (request) {
   if (request === 'electron') return fakeElectron;
-  if (request === 'koffi') return { load: () => ({ func: () => () => 0 }) };
+  if (request === 'koffi') return fakeKoffi;
   return origLoad.apply(this, arguments);
 };
 
@@ -186,6 +369,140 @@ const cfg = () => JSON.parse(fs.readFileSync(path.join(USER_DATA, 'config.json')
   ok(finalCfg.entries.length === 1 && finalCfg.entries[0].title === '元旦', `落盘条目：${JSON.stringify(finalCfg.entries.map((e) => e.title))}`);
   ok('note' in finalCfg.entries[0], `备注字段存在（${JSON.stringify(finalCfg.entries[0].note)}）`);
   ok(typeof finalCfg.locked === 'boolean', `locked 字段已落盘（${finalCfg.locked}）`);
+
+
+  /* ================================================================ */
+  /* 9~15：固定 / 解锁 / 再固定（图钉按钮背后的桌面层真机链路）           */
+  /*   —— 这一段就是用来防「图钉是假的」「解锁了拖不动」「再固定跑回老位置」 */
+  /* ================================================================ */
+  const W = () => windows[windows.length - 1];
+  const widgetParent = () => world.parent.get(HWND.widget) || 0;
+  const resetWorld = () => {
+    world.calls.setParent.length = 0;
+    world.calls.setWindowPos.length = 0;
+    world.hit = 'auto';
+  };
+  // 只看「带坐标」的 SetWindowPos：钉层时用它把窗口原地钉住
+  const pinnedAt = () => {
+    const list = world.calls.setWindowPos.filter((c) => c.hwnd === HWND.widget && !(c.flags & 0x0002));
+    return list.length ? list[list.length - 1] : null;
+  };
+
+  const w = W();
+
+  console.log('\n===== 9. 未固定：普通顶层窗口，可拖到任意地方 =====');
+  let st9 = call('state:get');
+  ok(st9.locked === false, '初始状态：未固定');
+  ok(widgetParent() === 0, '没有挂在桌面层（是顶层窗口，坐标就是屏幕坐标）');
+  ok(w.movable === true, 'setMovable(true)');
+  ok(st9.desktopLayerPref === 'auto', `偏好 = ${st9.desktopLayerPref}`);
+
+  resetWorld();
+  const p0 = w.getPosition();
+  cursor.x = p0[0] + 50;
+  cursor.y = p0[1] + 40;
+  call('on:drag:start');
+  cursor.x = p0[0] + 250; // 往右下拖 +200
+  cursor.y = p0[1] + 140; // 往右下拖 +100
+  call('on:drag:move');
+  call('on:drag:end');
+  const p1 = w.getPosition();
+  ok(p1[0] === p0[0] + 200 && p1[1] === p0[1] + 100, `拖动跟随鼠标：${p0.join(',')} → ${p1.join(',')}`);
+  await new Promise((r) => setTimeout(r, 500));
+  ok(cfg().x === p1[0] && cfg().y === p1[1], `新位置已落盘 (${cfg().x},${cfg().y})`);
+
+  console.log('\n===== 10. 点「固定」：真的钉进桌面层 + 位置锁死 =====');
+  call('state:set', { layerProbe: false }); // 关自检，强制走壁纸层（自检回退在 13 单独测）
+  resetWorld();
+  const before10 = w.getPosition();
+  let st10 = call('state:set', { locked: true });
+  ok(
+    world.calls.setParent.some((c) => c.child === HWND.widget && c.parent === HWND.wallpaper),
+    'SetParent(widget → 壁纸层 WorkerW)：是真钉，不是只改 UI'
+  );
+  ok(widgetParent() === HWND.wallpaper, `窗口父句柄 = 0x${widgetParent().toString(16)}`);
+  ok(st10.desktopLayer === 'workerw' && st10.locked === true, `层级 ${st10.desktopLayer} / locked ${st10.locked}`);
+  ok(w.movable === false, 'setMovable(false)：OS 侧也不给拖');
+  const pin10 = pinnedAt();
+  ok(
+    pin10 && pin10.x === before10[0] && pin10.y === before10[1],
+    `钉住时用当前屏幕坐标原地复核（${pin10 ? pin10.x + ',' + pin10.y : '—'}）`
+  );
+
+  const keep = w.getPosition();
+  cursor.x += 400;
+  cursor.y += 400;
+  call('on:drag:start');
+  call('on:drag:move');
+  call('on:drag:end');
+  ok(
+    w.getPosition()[0] === keep[0] && w.getPosition()[1] === keep[1],
+    '固定状态下拖动被主进程拦下（位置一动不动）'
+  );
+
+  console.log('\n===== 11. 点「解锁」：脱离桌面层，能拖到任意地方 =====');
+  resetWorld();
+  let st11 = call('state:set', { locked: false });
+  ok(
+    world.calls.setParent.some((c) => c.child === HWND.widget && c.parent === 0),
+    'SetParent(widget → NULL)：解除钉层'
+  );
+  ok(widgetParent() === 0, '回到普通顶层窗口');
+  ok(w.movable === true, 'setMovable(true)');
+  ok(st11.locked === false, 'locked 已落盘为 false');
+
+  const p2 = w.getPosition();
+  cursor.x = p2[0] + 30;
+  cursor.y = p2[1] + 20;
+  call('on:drag:start');
+  cursor.x = p2[0] + 30 - 900; // 拖到左上角（任意方向）
+  cursor.y = p2[1] + 20 - 600;
+  call('on:drag:move');
+  call('on:drag:end');
+  const p3 = w.getPosition();
+  ok(p3[0] === p2[0] - 900 && p3[1] === p2[1] - 600, `拖到 ${p3.join(',')}（向左上也跟随）`);
+  await new Promise((r) => setTimeout(r, 500));
+  ok(cfg().x === p3[0] && cfg().y === p3[1], `解锁后的新位置已落盘 (${cfg().x},${cfg().y})`);
+
+  console.log('\n===== 12. 再点「固定」：锁在拖动后的新位置 =====');
+  resetWorld();
+  let st12 = call('state:set', { locked: true });
+  ok(widgetParent() === HWND.wallpaper, '重新钉回壁纸层');
+  const pin12 = pinnedAt();
+  ok(
+    pin12 && pin12.x === p3[0] && pin12.y === p3[1],
+    `钉的是新位置（${pin12 ? pin12.x + ',' + pin12.y : '—'}），不是解锁前的老位置`
+  );
+  ok(st12.locked === true && st12.desktopLayer === 'workerw', `locked ${st12.locked} / layer ${st12.desktopLayer}`);
+
+  console.log('\n===== 13. 点击自检：壁纸层点不到时自动退到「必定可点击」的兼容层 =====');
+  call('state:set', { locked: false });
+  call('state:set', { layerProbe: true });
+  resetWorld();
+  let st13 = call('state:set', { locked: true });
+  ok(
+    st13.desktopLayer === 'sink',
+    `workerw / progman 的自检都不通过 → 落到 ${st13.desktopLayer}（不会卡在点不动的死状态）`
+  );
+  ok(widgetParent() === 0, '没有被挂在壁纸层');
+  ok(
+    world.calls.setWindowPos.some((c) => c.hwnd === HWND.widget && c.after === HWND.icon && c.flags & 0x0002),
+    '压在桌面图标层之上（sink），其它窗口仍然盖得住它'
+  );
+
+  console.log('\n===== 14. 显式选「兼容模式」：直接用 sink，并保持锁定 =====');
+  resetWorld();
+  let st14 = call('state:set', { desktopLayer: 'bottom' });
+  ok(st14.desktopLayerPref === 'bottom', `偏好已落盘 = ${st14.desktopLayerPref}`);
+  ok(st14.desktopLayer === 'sink', `生效层级 = ${st14.desktopLayer}`);
+  ok(w.movable === false, '兼容模式下依然是「已固定」：拖不动');
+  ok(cfg().locked === true, 'locked=true 已落盘');
+
+  console.log('\n===== 15. 收尾：解锁并恢复默认偏好 =====');
+  const st15 = call('state:set', { locked: false, desktopLayer: 'auto' });
+  ok(st15.locked === false && st15.desktopLayerPref === 'auto', '回到未固定 / auto');
+  ok(cfg().locked === false, 'config.json 落盘同步');
+
 
   console.log(`\n===== 测试结束：${fails === 0 ? '全部通过 ✅' : fails + ' 处失败 ❌'} =====`);
   console.log('（配置目录 ' + USER_DATA + '）');
