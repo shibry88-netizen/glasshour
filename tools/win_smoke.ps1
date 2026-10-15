@@ -1,4 +1,4 @@
-# GlassHour · Windows 真机冒烟测试
+﻿# GlassHour · Windows 真机冒烟测试
 #
 # 在真 Windows 上验证沙盒里验不了的那几件事：
 #   1. 桌面层到底落到哪一级（壁纸层 / 桌面窗口 / 兼容层）——读 glasshour.log
@@ -16,15 +16,18 @@
 
 param(
   [string]$Exe = "",
+  [string]$OutDir = "",
   [string]$ReleaseUrl = "https://github.com/shibry88-netizen/glasshour/releases/download/v1.3.1/GlassHour-Portable-1.3.1.exe",
   [switch]$TestAutostart,
   [switch]$KeepRunning
 )
 
 $ErrorActionPreference = "Continue"
-$OutDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "gh-smoke"
+if (!$OutDir) { $OutDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "gh-smoke" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $Report = Join-Path $OutDir "smoke-report.txt"
+$Json = Join-Path $OutDir "smoke-result.json"
+$Findings = New-Object System.Collections.ArrayList
 $AppData = Join-Path $env:APPDATA "GlassHour"
 $CfgPath = Join-Path $AppData "config.json"
 $LogPath = Join-Path $AppData "glasshour.log"
@@ -33,7 +36,9 @@ function Say($msg) {
   $line = "$(Get-Date -Format 'HH:mm:ss')  $msg"
   Write-Host $line
   Add-Content -Path $Report -Value $line -Encoding UTF8
+  $global:LastLine = $msg
 }
+function Note($k, $v) { [void]$Findings.Add(@{ key = $k; value = $v }) }
 
 Add-Type -Namespace GhSmoke -Name U -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
@@ -267,4 +272,6 @@ if (!$KeepRunning) {
   Say "关闭组件…"
   Get-Process GlassHour -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
+$Findings | ConvertTo-Json -Depth 4 | Set-Content -Path $Json -Encoding UTF8
 Say "=== 结束。报告：$Report ==="
+Say "=== JSON：$Json ===" 
