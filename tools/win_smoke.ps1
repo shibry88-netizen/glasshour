@@ -50,6 +50,7 @@ Add-Type -Namespace GhSmoke -Name U -MemberDefinition @'
 [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(System.IntPtr hWnd, System.Text.StringBuilder s, int n);
 [DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr hWnd);
 [DllImport("user32.dll")] public static extern bool EnumWindows(System.IntPtr cb, System.IntPtr lParam);
+[DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);
 [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 '@
@@ -61,10 +62,13 @@ Add-TypeDrawing
 
 function Shot($name) {
   try {
-    $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+    # 远程桌面 / 无 WinForms 屏信息时 Screen.PrimaryScreen 可能为空 → 直接用 GetSystemMetrics
+    $w = [GhSmoke.U]::GetSystemMetrics(0)
+    $h = [GhSmoke.U]::GetSystemMetrics(1)
+    if ($w -le 0 -or $h -le 0) { Say "  截图跳过：拿不到屏幕尺寸"; return }
+    $bmp = New-Object System.Drawing.Bitmap $w, $h
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($b.X, $b.Y, 0, 0, $bmp.Size)
+    $g.CopyFromScreen(0, 0, 0, 0, $bmp.Size)
     $p = Join-Path $OutDir "$name.png"
     $bmp.Save($p, [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose(); $bmp.Dispose()
@@ -79,7 +83,11 @@ function Get-Cfg {
   try { return (Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { return $null }
 }
 function Get-WidgetRect {
-  $h = [GhSmoke.U]::FindWindow($null, "GlassHour")
+  # 优先用进程的 MainWindowHandle（frameless 窗口也能拿到），FindWindow 作兜底
+  $h = [IntPtr]::Zero
+  $p = Get-Process GlassHour -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+  if ($p) { $h = $p.MainWindowHandle }
+  if ($h -eq [IntPtr]::Zero) { $h = [GhSmoke.U]::FindWindow($null, "GlassHour") }
   if ($h -eq [IntPtr]::Zero) { return $null }
   $r = New-Object GhSmoke.U+RECT
   if (![GhSmoke.U]::GetWindowRect($h, [ref]$r)) { return $null }
@@ -263,7 +271,7 @@ if ($TestAutostart) {
   Start-Sleep -Seconds 10
   $after = (Get-ItemProperty -Path $runKey -ErrorAction SilentlyContinue).GlassHour
   Say "  改之后 Run 项：$after"
-  Say "  （预期形如 \"<exe路径>\" --autostart；若为空说明写入没生效）"
+  Say '  （预期形如 "<exe路径>" --autostart；若为空说明写入没生效）'
 } else {
   Say "（跳过开机自启测试：加 -TestAutostart 会去改注册表 Run 项）"
 }

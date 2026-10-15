@@ -330,10 +330,38 @@ function createWidget() {
 
   widget.loadFile(path.join(ROOT, 'renderer', 'index.html'));
 
-  widget.once('ready-to-show', () => {
+  /*
+   * 显示时机：正常走 ready-to-show；但它**不保证一定触发**（远程桌面、显卡驱动异常、
+   * 纯软件渲染的机器上都可能出现），一旦不来，用户看到的就是「进程起了但界面没有」，
+   * 和「开机自启动了却没反应」一模一样。所以这里加一道兜底（真机实测踩到过）。
+   */
+  let shown = false;
+  const showOnce = (why) => {
+    if (shown || !widget || widget.isDestroyed()) return;
+    shown = true;
+    log(`show: ${why}`);
     if (store.get('visible')) widget.showInactive();
     applyLayer();
-  });
+  };
+  widget.once('ready-to-show', () => showOnce('ready-to-show'));
+  setTimeout(() => showOnce('timeout-fallback'), 3500);
+
+  // 渲染层异常也要留痕：以后用户反馈「界面白屏 / 组件不见了」，日志里能直接看出原因
+  try {
+    widget.webContents.on('did-fail-load', (_e, code, desc, url) => {
+      log(`did-fail-load code=${code} ${desc} url=${url}`);
+    });
+    widget.webContents.on('render-process-gone', (_e, details) => {
+      log(`render-process-gone ${JSON.stringify(details)}`);
+    });
+    widget.webContents.on('preload-error', (_e, preloadPath, err) => {
+      log(`preload-error ${preloadPath} ${err && err.message}`);
+    });
+  } catch (_) {
+    /* 忽略 */
+  }
+  widget.on('unresponsive', () => log('widget unresponsive'));
+  widget.on('responsive', () => log('widget responsive'));
 
   // 位置记忆：拖动中由 drag:end 统一落盘，这里只处理别的位移，并做防抖（别每帧写盘）
   widget.on('moved', () => {
@@ -1069,6 +1097,13 @@ app.whenReady().then(() => {
   createTray();
 
   registerHotkey();
+
+  // GPU / 渲染状态留痕：透明窗口 + backdrop-filter 在软件渲染或显卡异常的机器上会退化
+  try {
+    log(`gpu: ${JSON.stringify(app.getGPUFeatureStatus())}`);
+  } catch (err) {
+    log('gpu status failed:', err && err.message);
+  }
 
   /*
    * 开机自启状态同步：以「用户意愿」(store) 为准。
