@@ -39,7 +39,8 @@ echo "== 生成图标资产（托盘 16/32、app 512、多尺寸 ico） =="
 # 这些文件必须存在于 assets/ 与 build/：曾经因为 assets/tray.png 没进仓库，
 # 运行时托盘图标是空图，用户在通知区域找不到恢复入口。
 python3 scripts/make_small_icons.py || true
-python3 scripts/make_tray.py
+# 出图失败不算致命：仓库里已经提交了 assets/tray.png / icon.png，下面那道存在性校验才是硬门槛
+python3 scripts/make_tray.py || echo "（make_tray.py 失败：沿用仓库里已有的托盘图标）"
 python3 scripts/make_icons.py || echo "（make_icons.py 跳过：需要 design/icon-1024.png）"
 for f in assets/tray.png assets/tray@2x.png assets/icon.png build/icon.ico; do
   [ -s "$f" ] || { echo "缺少图标资产: $f" >&2; exit 1; }

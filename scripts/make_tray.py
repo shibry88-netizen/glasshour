@@ -72,6 +72,7 @@ def load_source():
 
 
 def main():
+    failed = 0
     src = load_source()
 
     jobs = [
@@ -91,9 +92,11 @@ def main():
         elif src is not None:
             tune(src, size).save(out)
             print('%-14s <- assets/icon.svg 缩放 (%dpx)  ⚠ 未用粗化变体' % (out_name, size))
+        elif os.path.exists(out):
+            print('%-14s 保留仓库里已有的图（本机没有 SVG 渲染器：装 librsvg2-bin 或 pip install cairosvg）' % out_name)
         else:
-            print('缺少 assets/icon.svg，无法生成 %s' % out_name, file=sys.stderr)
-            sys.exit(1)
+            print('%s 生成不了：既没有可用的 SVG 渲染器，也没有 assets/icon.svg / design/icon-1024.png' % out_name, file=sys.stderr)
+            failed += 1
 
     # 顺便保证 assets/icon.png（512）在仓库里存在，别让运行时找不到
     icon_png = os.path.join(ASSETS, 'icon.png')
@@ -101,6 +104,9 @@ def main():
         src.resize((512, 512), Image.LANCZOS).save(icon_png)
         print('icon.png       <- assets/icon.svg (512px)')
 
+    if failed:
+        print('托盘图标有 %d 个没生成出来' % failed, file=sys.stderr)
+        sys.exit(1)
     print('托盘图标生成完成 ->', ASSETS)
 
 
