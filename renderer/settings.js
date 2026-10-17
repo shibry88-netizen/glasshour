@@ -182,6 +182,13 @@
       scale <= 0.65
         ? '小尺寸：隐藏备注与模式切换；双击卡片或用托盘切换模式。'
         : '完整版式。调整桌面上卡片的显示尺寸，立即生效并记忆。';
+    const corner = state.corner === 'tr' ? 'tr' : 'br';
+    document.querySelectorAll('#cornerSeg button').forEach((b) => {
+      const on = b.dataset.corner === corner;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
     $('toggleVisible').textContent = state.visible ? '隐藏组件' : '显示组件';
     $('toggleVisible').title = state.visible
       ? '把桌面上的卡片收起来（Ctrl+Alt+G 可恢复）'
@@ -288,6 +295,9 @@
   function currentScale() {
     return Number(state.uiScale) || 0.5;
   }
+  function currentCorner() {
+    return state.corner === 'tr' ? 'tr' : 'br';
+  }
   async function pickScale(k) {
     const next = await gh.setScale(k);
     if (next && next.mode) paint(next);
@@ -324,9 +334,19 @@
     status($('autostart').checked ? '已开启开机自启' : '已关闭开机自启');
   });
 
+  // 默认位置：右下角 / 右上角，点了立刻把组件移过去并记住
+  $('cornerSeg').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-corner]');
+    if (!b) return;
+    const next = await gh.resetPosition(b.dataset.corner);
+    if (next && next.mode) paint(next);
+    status(`默认位置已设为${b.dataset.corner === 'tr' ? '右上角' : '右下角'}`);
+  });
+
   $('resetPos').addEventListener('click', async () => {
-    await gh.resetPosition();
-    status('窗口已回到右下角');
+    const next = await gh.resetPosition(currentCorner());
+    if (next && next.mode) paint(next);
+    status(`组件已移到${currentCorner() === 'tr' ? '右上角' : '右下角'}`);
   });
 
   $('openCfg').addEventListener('click', async () => {

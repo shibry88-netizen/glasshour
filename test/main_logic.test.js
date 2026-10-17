@@ -612,6 +612,44 @@ const cfg = () => JSON.parse(fs.readFileSync(path.join(USER_DATA, 'config.json')
   sc = call('size:set', 0.5);
   ok(sc.uiScale === 0.5, '回到 50%');
 
+  console.log('\n===== 20. 触控屏拖动：位置由指针坐标驱动，不依赖系统光标 =====');
+  call('state:set', { locked: false }); // 先解锁：锁定时拖动本来就该被拒
+  const w20 = W();
+  resetWorld();
+  cursor.x = 10;
+  cursor.y = 10; // 模拟「系统光标一动不动」（纯触控机器就是这样）
+  const q0 = w20.getPosition();
+  call('on:drag:start', { screenX: q0[0] + 60, screenY: q0[1] + 50, pointerType: 'touch' });
+  call('on:drag:move', { screenX: q0[0] + 60 - 120, screenY: q0[1] + 50 - 80 });
+  call('on:drag:end');
+  const q1 = w20.getPosition();
+  ok(
+    q1[0] === q0[0] - 120 && q1[1] === q0[1] - 80,
+    `触控拖动生效：${q0.join(',')} → ${q1.join(',')}（旧实现只读系统光标，会算成「位置不变」）`
+  );
+  cursor.x = 10;
+  cursor.y = 10;
+  call('on:drag:start');           // 不传坐标（老渲染层 / 鼠标路径）
+  cursor.x = 500; cursor.y = 400;  // 这次光标动了
+  call('on:drag:move');
+  call('on:drag:end');
+  ok(W().getPosition()[0] !== q1[0], '不传指针坐标时仍能按系统光标拖动（向后兼容）');
+
+  console.log('\n===== 21. 默认位置：右下角 / 右上角 =====');
+  const lockX = 1920 - 250 - 24; // 工作区 1920x1080、窗口 250x180（50% 档）
+  let st21 = call('ui:reset-position', 'tr');
+  const tr = W().getPosition();
+  ok(tr[0] === lockX && tr[1] === 40, `右上角 = (${tr.join(',')})，期望 (${lockX},40)`);
+  ok(st21.corner === 'tr' && cfg().corner === 'tr', '偏好已落盘 corner=tr');
+  st21 = call('ui:reset-position', 'br');
+  const br = W().getPosition();
+  ok(br[0] === lockX && br[1] === 1080 - 180 - 40, `右下角 = (${br.join(',')})，期望 (${lockX},${1080 - 220})`);
+  ok(st21.corner === 'br' && cfg().corner === 'br', '偏好已落盘 corner=br');
+  call('ui:reset-position', 'tr'); // 只带偏好，不带参数
+  const again = call('ui:reset-position');
+  ok(again.corner === 'tr' && W().getPosition()[1] === 40, '不带参数时按已记住的偏好走');
+  call('ui:reset-position', 'br');
+
   console.log('\n===== 15. 收尾：解锁并恢复默认偏好 =====');
   const st15 = call('state:set', { locked: false, desktopLayer: 'auto' });
   ok(st15.locked === false && st15.desktopLayerPref === 'auto', '回到未固定 / auto');

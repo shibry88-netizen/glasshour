@@ -126,9 +126,14 @@ html, body {
   overflow: hidden;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  /* 触控屏：不加这条，手指拖动会被浏览器当成滚动手势接管并抛 pointercancel，
+     表现就是「按着能亮、但怎么拖都不动」 */
+  touch-action: none;
+  -webkit-user-drag: none;
 }
 
 .gh-stage {
+  touch-action: none;
   position: relative;
   width: var(--win-w, 460px);
   height: var(--win-h, 320px);

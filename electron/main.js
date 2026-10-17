@@ -75,6 +75,7 @@ const store = new Store('config', {
   migratedGaokao: false,
   hiddenTipShown: false,
   uiScale: DEFAULT_SCALE, // 组件大小：0.5 | 0.65 | 0.8 | 1
+  corner: 'br', // 默认停靠位置：br 右下角 | tr 右上角
   timerRunning: false,
   timerEndsAt: 0,
   timerRemaining: 1500,
@@ -267,6 +268,25 @@ if (!gotTheLock) {
 /* ------------------------------------------------------------------ */
 /* 组件窗口                                                            */
 /* ------------------------------------------------------------------ */
+/**
+ * 拖动用的屏幕坐标：优先用渲染层传来的指针坐标（screenX/screenY，DIP，与 setPosition 同坐标系），
+ * 拿不到才退回系统光标。
+ * 为什么要这样：**触控屏拖动时系统光标不一定跟着手指走**，只读 GetCursorPos 会算成「位置不变」，
+ * 用户看到的就是「已经解锁了却怎么拖都不动」。
+ */
+function pointerScreenPos(pointer) {
+  if (pointer && Number.isFinite(pointer.screenX) && Number.isFinite(pointer.screenY)) {
+    return { x: pointer.screenX, y: pointer.screenY };
+  }
+  return screen.getCursorScreenPoint();
+}
+
+// 默认停靠位置：右下角 / 右上角
+const CORNERS = { br: '右下角', tr: '右上角' };
+function normalizeCorner(c) {
+  return CORNERS[c] ? c : 'br';
+}
+
 function workAreas() {
   try {
     const list = screen.getAllDisplays();
@@ -277,11 +297,12 @@ function workAreas() {
   return [screen.getPrimaryDisplay().workArea];
 }
 
-function defaultPosition() {
+function defaultPosition(corner) {
   const wa = workAreas()[0];
+  const c = normalizeCorner(corner || store.get('corner'));
   return {
     x: wa.x + wa.width - WIN_W - 24,
-    y: wa.y + wa.height - WIN_H - 40,
+    y: c === 'tr' ? wa.y + 40 : wa.y + wa.height - WIN_H - 40,
   };
 }
 
@@ -795,7 +816,8 @@ function openSettings() {
   });
 }
 
-function resetPosition() {
+function resetPosition(corner) {
+  if (corner) store.set('corner', normalizeCorner(corner));
   const d = defaultPosition();
   if (!widget || widget.isDestroyed()) {
     store.patch({ x: d.x, y: d.y });
@@ -806,7 +828,7 @@ function resetPosition() {
   widget.setPosition(d.x, d.y);
   store.patch({ x: d.x, y: d.y });
   applyLayer();
-  log(`resetPosition → ${d.x},${d.y}`);
+  log(`resetPosition → ${CORNERS[normalizeCorner(store.get('corner'))]} (${d.x},${d.y})`);
 }
 
 /** 固定 / 解锁（图钉按钮与托盘共用同一条路径） */
@@ -873,7 +895,13 @@ function refreshTrayMenu() {
         })),
       },
       { label: '桌面层自检…', click: diagnoseLayers },
-      { label: '重置窗口位置', click: resetPosition },
+      {
+        label: '重置窗口位置',
+        submenu: [
+          { label: '右下角', type: 'radio', checked: normalizeCorner(store.get('corner')) === 'br', click: () => resetPosition('br') },
+          { label: '右上角', type: 'radio', checked: normalizeCorner(store.get('corner')) === 'tr', click: () => resetPosition('tr') },
+        ],
+      },
       { type: 'separator' },
       {
         label: '关于 GlassHour',
@@ -944,6 +972,8 @@ function publicState() {
     desktopLayerProbe: layerState.probe || 'skip',
     layerProbeEnabled: !!store.get('layerProbe'),
     uiScale: normalizeScale(store.get('uiScale')),
+    corner: normalizeCorner(store.get('corner')),
+    cornerLabel: CORNERS[normalizeCorner(store.get('corner'))],
     locked: !!store.get('locked'),
     version: app.getVersion(),
     loginItem: currentAutoStart(),
@@ -995,9 +1025,9 @@ function registerIpc() {
     applyScale(k);
     return publicState();
   });
-  ipcMain.handle('ui:reset-position', () => {
-    resetPosition();
-    return true;
+  ipcMain.handle('ui:reset-position', (_e, corner) => {
+    resetPosition(corner);
+    return publicState();
   });
   ipcMain.handle('app:quit', () => {
     quitFlag = true;
@@ -1035,7 +1065,7 @@ function registerIpc() {
    * 渲染层那一句 `if (state.locked) return` 只是提前省事，主进程这里的 store 判断才是权威闸门：
    * 就算渲染层状态过期，固定状态下也一律不放行。
    */
-  ipcMain.on('drag:start', () => {
+  ipcMain.on('drag:start', (_e, pointer) => {
     if (!widget || widget.isDestroyed()) return;
     if (store.get('locked')) {
       log('drag:start 被拒：已固定（先点图钉解锁）');
@@ -1046,7 +1076,7 @@ function registerIpc() {
     pin.detachToTopLevel(widget);
     sinkActive = false;
     stopLayerKeeper();
-    const pt = screen.getCursorScreenPoint();
+    const pt = pointerScreenPos(pointer);
     const [wx, wy] = widget.getPosition();
     dragOffset = { dx: pt.x - wx, dy: pt.y - wy };
     dragTarget = { x: wx, y: wy };
@@ -1056,13 +1086,13 @@ function registerIpc() {
     } catch (_) {
       /* ignore */
     }
-    log(`drag:start ${wx},${wy}`);
+    log(`drag:start ${wx},${wy} via=${(pointer && pointer.pointerType) || 'cursor'}`);
   });
 
-  ipcMain.on('drag:move', () => {
+  ipcMain.on('drag:move', (_e, pointer) => {
     if (!dragging || !dragOffset || !widget || widget.isDestroyed()) return;
     if (store.get('locked')) return;
-    const pt = screen.getCursorScreenPoint();
+    const pt = pointerScreenPos(pointer);
     dragTarget = { x: Math.round(pt.x - dragOffset.dx), y: Math.round(pt.y - dragOffset.dy) };
     widget.setPosition(dragTarget.x, dragTarget.y);
   });

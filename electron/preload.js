@@ -18,13 +18,13 @@ contextBridge.exposeInMainWorld('gh', {
   openSettings: () => ipcRenderer.invoke('ui:open-settings'),
   hide: () => ipcRenderer.invoke('ui:hide'),
   show: () => ipcRenderer.invoke('ui:show'),
-  resetPosition: () => ipcRenderer.invoke('ui:reset-position'),
+  resetPosition: (corner) => ipcRenderer.invoke('ui:reset-position', corner),
   quit: () => ipcRenderer.invoke('app:quit'),
   openPath: (p) => ipcRenderer.invoke('shell:open-path', p),
 
   // 手动拖动
-  dragStart: () => ipcRenderer.send('drag:start'),
-  dragMove: () => ipcRenderer.send('drag:move'),
+  dragStart: (pt) => ipcRenderer.send('drag:start', pt),
+  dragMove: (pt) => ipcRenderer.send('drag:move', pt),
   dragEnd: () => ipcRenderer.send('drag:end'),
 
   platform: process.platform,

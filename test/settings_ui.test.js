@@ -38,6 +38,7 @@ function makeState() {
     layerProbeEnabled: true,
     locked: false,
     uiScale: 0.65,
+    corner: 'br',
     version: '1.1.0',
     loginItem: false,
     userData: '/tmp/fake',
@@ -79,7 +80,8 @@ function buildDom(state) {
         return window.__STATE__; },
       stepEntry: async () => window.__STATE__,
       onState: () => () => {},
-      openSettings: () => {}, resetPosition: async () => {},
+      openSettings: () => {},
+      resetPosition: async (c) => { window.__CALLS__.push({ fn: 'resetPosition', args: [c] }); if (c) window.__STATE__.corner = c; return window.__STATE__; },
       hide: async () => { window.__CALLS__.push({ fn: 'hide' }); window.__STATE__.visible = false; return window.__STATE__; },
       show: async () => { window.__CALLS__.push({ fn: 'show' }); window.__STATE__.visible = true; return window.__STATE__; },
       quit: () => {}, openPath: async () => {}, dragStart: () => {}, dragMove: () => {}, dragEnd: () => {},
@@ -261,6 +263,28 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
   ok(!!scCall && scCall.args[0] === 1, '点 100% 会走 size:set(1)');
   ok(d.querySelector('#sizeSeg button.is-active').dataset.scale === '1', '高亮跟着换到 100%');
   ok(/完整版式/.test(d.getElementById('sizeHint').textContent), `大档注解：${d.getElementById('sizeHint').textContent}`);
+
+  console.log('\n===== 11. 默认位置（右下角 / 右上角）=====');
+  const cornerBtns = () => [...d.querySelectorAll('#cornerSeg button')];
+  ok(cornerBtns().length === 2, `两档按钮：${cornerBtns().map((b) => b.textContent).join(' / ')}`);
+  ok(
+    d.querySelector('#cornerSeg button.is-active').dataset.corner === 'br',
+    `corner=br 时高亮右下角（当前 ${d.querySelector('#cornerSeg button.is-active').textContent}）`
+  );
+  calls().length = 0;
+  click(d.querySelector('#cornerSeg button[data-corner="tr"]'));
+  await tick();
+  await tick();
+  const cCall = calls().find((c) => c.fn === 'resetPosition');
+  ok(!!cCall && cCall.args[0] === 'tr', '点右上角会调 resetPosition(tr)（顺便把组件挪过去）');
+  ok(d.querySelector('#cornerSeg button.is-active').dataset.corner === 'tr', '高亮跟着换到右上角');
+  ok(/右上角/.test(d.getElementById('status').textContent), `提示文案：${d.getElementById('status').textContent}`);
+  calls().length = 0;
+  click(d.getElementById('resetPos'));
+  await tick();
+  await tick();
+  const rCall = calls().find((c) => c.fn === 'resetPosition');
+  ok(!!rCall && rCall.args[0] === 'tr', '「立刻移到默认位置」按当前偏好走');
 
   console.log(`\n===== 测试结束：${fails === 0 ? '全部通过 ✅' : fails + ' 处失败 ❌'} =====`);
   process.exit(fails === 0 ? 0 : 1);

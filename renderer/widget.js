@@ -369,22 +369,30 @@
         }
       };
       drag.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return;
+        // 只有鼠标才判「左键」：触控/笔的 pointerdown 各厂商驱动给的 button 不一致，
+        // 判成非 0 就会在触屏上直接把拖动扔掉（真机反馈「解锁了也拖不动」的成因之一）
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
         if (e.target.closest(NO_DRAG)) return;
         if (state && state.locked) return; // 已固定：拖不动
         activeId = e.pointerId;
-        // 用 pointer capture：甩得快、指针跑到窗口外也不会丢掉 mouseup，拖动不会「断」
+        // 用 pointer capture：甩得快、指针跑到窗口外也不会丢掉 pointerup，拖动不会「断」
         try {
           drag.setPointerCapture(e.pointerId);
         } catch (_) {
           /* ignore */
         }
-        bridge.dragStart();
+        // 关键：把指针的屏幕坐标一起送过去。触控拖动时系统光标不一定跟着手指走，
+        // 主进程若只读 GetCursorPos 就会每次都算出「位置不变」
+        bridge.dragStart({
+          screenX: e.screenX,
+          screenY: e.screenY,
+          pointerType: e.pointerType || 'mouse',
+        });
         e.preventDefault();
       });
-      drag.addEventListener('pointermove', () => {
-        if (activeId == null) return;
-        bridge.dragMove();
+      drag.addEventListener('pointermove', (e) => {
+        if (activeId == null || e.pointerId !== activeId) return;
+        bridge.dragMove({ screenX: e.screenX, screenY: e.screenY });
       });
       drag.addEventListener('pointerup', onUp);
       drag.addEventListener('pointercancel', onUp);
